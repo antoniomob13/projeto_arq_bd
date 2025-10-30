@@ -1,40 +1,13 @@
-import { useMemo } from 'react';
-import { Box, useColorModeValue } from '@chakra-ui/react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts';
+import { Box, Text } from '@chakra-ui/react';
 
 export type Point = { t: number; v: number };
 
 export default function RealtimeChart({ data }: { data: Point[] }) {
-  const gridColor = useColorModeValue('#e2e8f0', '#2d3748');
-  const stroke = useColorModeValue('#2b6cb0', '#63b3ed');
-
-  const formatted = useMemo(
-    () => data.map((p) => ({
-      name: new Date(p.t).toLocaleTimeString(),
-      value: Number(p.v.toFixed(2)),
-    })),
-    [data]
-  );
-
+  // Placeholder component kept to avoid breaking imports if referenced.
+  // Charting library was removed during layout-only scope.
   return (
-    <Box w="100%" h="300px">
-      <ResponsiveContainer>
-        <LineChart data={formatted} margin={{ top: 5, right: 16, left: 8, bottom: 0 }}>
-          <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-          <XAxis dataKey="name" minTickGap={32} />
-          <YAxis domain={[0, 'auto']} />
-          <Tooltip />
-          <Line type="monotone" dataKey="value" stroke={stroke} dot={false} strokeWidth={2} isAnimationActive={false} />
-        </LineChart>
-      </ResponsiveContainer>
+    <Box w="100%" h="300px" display="flex" alignItems="center" justifyContent="center" bg="gray.800" borderWidth="1px" borderColor="gray.700" borderRadius="md">
+      <Text color="gray.400">Gráfico desativado (apenas layout)</Text>
     </Box>
   );
 }

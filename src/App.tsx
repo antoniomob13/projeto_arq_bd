@@ -1,27 +1,28 @@
-import { Box, Flex, Heading, IconButton, Spacer, useColorMode, useColorModeValue } from '@chakra-ui/react';
-import { MoonIcon, SunIcon } from '@chakra-ui/icons';
-import Dashboard from './pages/Dashboard';
+import { Box, Flex } from '@chakra-ui/react';
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
+import Sidebar from './layout/Sidebar';
+import Topbar from './layout/Topbar';
+import Instances from './pages/Instances';
+import Dados from './pages/Dados';
+import Historico from './pages/Historico';
 
 export default function App() {
-  const { colorMode, toggleColorMode } = useColorMode();
-  const bg = useColorModeValue('gray.50', 'gray.900');
-  const headerBg = useColorModeValue('white', 'gray.800');
-
   return (
-    <Flex direction="column" minH="100vh" bg={bg}>
-      <Flex as="header" align="center" p={4} bg={headerBg} boxShadow="sm" position="sticky" top={0} zIndex={1}>
-        <Heading size="md">Monitoring Dashboard</Heading>
-        <Spacer />
-        <IconButton
-          aria-label="toggle color mode"
-          icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
-          onClick={toggleColorMode}
-          variant="ghost"
-        />
+    <BrowserRouter>
+      <Flex direction="column" minH="100vh">
+  <Topbar userName="uL7" />
+        <Flex flex="1 1 auto">
+          <Sidebar />
+          <Box flex="1 1 auto">
+            <Routes>
+            <Route path="/" element={<Navigate to="/visualizacao" replace />} />
+            <Route path="/visualizacao" element={<Instances />} />
+              <Route path="/dados" element={<Dados />} />
+              <Route path="/historico" element={<Historico />} />
+            </Routes>
+          </Box>
+        </Flex>
       </Flex>
-      <Box as="main" p={6} flex="1 1 auto">
-        <Dashboard />
-      </Box>
-    </Flex>
+    </BrowserRouter>
   );
 }
