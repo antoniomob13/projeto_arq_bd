@@ -31,7 +31,7 @@ export default function Sidebar() {
                 py={2}
                 borderRadius="md"
                 bg={active ? 'gray.700' : 'transparent'}
-                color={active ? 'teal.200' : 'gray.200'}
+                color={active ? 'blue.400' : 'gray.200'}
                 _hover={{ bg: 'gray.700' }}
               >
                 <Icon as={it.icon} />
