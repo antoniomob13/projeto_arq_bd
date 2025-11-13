@@ -20,9 +20,10 @@ const PORT = process.env.PORT || 4000;
 
 connect(process.env.MONGODB_URI || '')
   .then(() => {
+    console.log('✅ MongoDB connected');
     app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
   })
   .catch((err) => {
-    console.error('DB connection error:', err.message);
+    console.error('❌ DB connection error:', err.message);
     process.exit(1);
   });
