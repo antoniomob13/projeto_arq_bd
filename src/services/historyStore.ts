@@ -4,6 +4,7 @@ export type HistoryEntry = {
   user: string; // quem inseriu
   action: 'insercao' | string;
   entity?: string; // nome/identificador opcional
+  category?: 'cliente' | 'sistema' | 'outro';
 };
 
 const KEY = 'history.entries.v1';
@@ -36,6 +37,7 @@ export const historyStore = {
       user: entry.user,
       action: entry.action,
       entity: entry.entity,
+      category: entry.category ?? 'outro',
     };
     list.push(item);
     write(list);

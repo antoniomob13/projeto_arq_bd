@@ -1,7 +1,7 @@
 import { Box, Flex, Icon, Link as ChakraLink, Text, VStack } from '@chakra-ui/react';
 import { Link, useLocation } from 'react-router-dom';
 import { ViewIcon } from '@chakra-ui/icons';
-import { MdDataUsage, MdHistory, MdCode } from 'react-icons/md';
+import { MdDataUsage, MdHistory } from 'react-icons/md';
 
 const items = [
   { to: '/visualizacao', label: 'Visualização', icon: ViewIcon },

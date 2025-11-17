@@ -15,7 +15,7 @@ const EnderecoSchema = new Schema(
 const ClienteSchema = new Schema(
   {
     nome: { type: String, required: true },
-    cpf_cnpj: { type: String, required: true },
+    cpf_cnpj: { type: String, required: true, unique: true, index: true },
     tipo_pessoa: { type: String, enum: ['F', 'J'], required: true },
     data_nasc: Date,
     telefone: String,
@@ -29,5 +29,7 @@ const ClienteSchema = new Schema(
   },
   { timestamps: true }
 );
+
+ClienteSchema.index({ cpf_cnpj: 1 }, { unique: true });
 
 export const Cliente = model('Cliente', ClienteSchema);

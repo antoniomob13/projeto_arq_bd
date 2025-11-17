@@ -14,7 +14,7 @@ export type Alert = { id: string; timestamp: number; severity: 'low' | 'medium' 
 
 export type Unsubscribe = () => void;
 
-type Listener<T> = (value: T) => void;
+type Listener<T> = (_value: T) => void;
 
 class DataService {
   private metricListeners = new Set<Listener<Metrics>>();

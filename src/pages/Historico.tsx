@@ -1,5 +1,5 @@
-import { Box, Button, Flex, Table, Tbody, Td, Th, Thead, Tr, Text } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { Box, Button, Flex, SimpleGrid, Table, Tbody, Td, Th, Thead, Tr, Text } from '@chakra-ui/react';
+import { useEffect, useMemo, useState } from 'react';
 import { historyStore, type HistoryEntry } from '../services/historyStore';
 
 export default function Historico() {
@@ -7,9 +7,16 @@ export default function Historico() {
 
   useEffect(() => {
     const onUpd = () => setItems(historyStore.all());
-    window.addEventListener('history-updated', onUpd as EventListener);
-    return () => window.removeEventListener('history-updated', onUpd as EventListener);
+    window.addEventListener('history-updated', onUpd);
+    return () => window.removeEventListener('history-updated', onUpd);
   }, []);
+
+  const grouped = useMemo(() => {
+    const clientes = items.filter((item) => item.category === 'cliente');
+    const sistemas = items.filter((item) => item.category === 'sistema');
+    const outros = items.filter((item) => item.category !== 'cliente' && item.category !== 'sistema');
+    return { clientes, sistemas, outros };
+  }, [items]);
 
   return (
     <Box p={4}>
@@ -18,7 +25,21 @@ export default function Historico() {
         <Button size="sm" variant="outline" onClick={() => historyStore.clear()}>Limpar histórico</Button>
       </Flex>
 
-      <Box bg="gray.800" borderWidth="1px" borderColor="gray.700" borderRadius="md" overflowX="auto">
+      <SimpleGrid columns={{ base: 1, xl: 2 }} gap={6} mb={6}>
+        <HistorySection title="Inserções de clientes" entries={grouped.clientes} empty="Nenhum cliente registrado." />
+        <HistorySection title="Inserções de sistemas" entries={grouped.sistemas} empty="Nenhum sistema registrado." />
+      </SimpleGrid>
+
+      <HistorySection title="Outros eventos" entries={grouped.outros} empty="Sem eventos adicionais." />
+    </Box>
+  );
+}
+
+function HistorySection({ title, entries, empty }: { title: string; entries: HistoryEntry[]; empty: string }) {
+  return (
+    <Box bg="gray.800" borderWidth="1px" borderColor="gray.700" borderRadius="md" overflowX="auto" p={2}>
+      <Text fontSize="lg" fontWeight="semibold" px={2} py={1}>{title}</Text>
+      <Box>
         <Table size="sm" variant="simple">
           <Thead>
             <Tr>
@@ -29,12 +50,12 @@ export default function Historico() {
             </Tr>
           </Thead>
           <Tbody>
-            {items.length === 0 ? (
+            {entries.length === 0 ? (
               <Tr>
-                <Td colSpan={4}><Text color="gray.400">Sem eventos registrados.</Text></Td>
+                <Td colSpan={4}><Text color="gray.400">{empty}</Text></Td>
               </Tr>
             ) : (
-              items.map((e) => (
+              entries.map((e) => (
                 <Tr key={e.id}>
                   <Td>{new Date(e.timestamp).toLocaleString('pt-BR')}</Td>
                   <Td textTransform="capitalize">{e.action}</Td>

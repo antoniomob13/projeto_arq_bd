@@ -7,6 +7,9 @@ module.exports = {
   env: { browser: true, es2022: true, node: true },
   ignorePatterns: ['dist', 'node_modules'],
   rules: {
-    'react/react-in-jsx-scope': 'off'
+    'react/react-in-jsx-scope': 'off',
+    'no-undef': 'off',
+    'no-unused-vars': 'off',
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', ignoreRestSiblings: true }]
   }
 };
