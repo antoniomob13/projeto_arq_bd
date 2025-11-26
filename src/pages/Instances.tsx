@@ -11,64 +11,40 @@ import {
   InputGroup,
   InputLeftElement,
   SimpleGrid,
+  Spinner,
   Stack,
   Text,
   Tooltip,
+  useDisclosure,
   useToast,
 } from '@chakra-ui/react';
 import type { FormEvent } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  FiEdit2,
-  FiExternalLink,
-  FiMapPin,
-  FiPlus,
-  FiSearch,
-  FiServer,
-  FiTrash2,
-  FiUser,
-  FiZap,
-} from 'react-icons/fi';
+  FaPenToSquare,
+  FaArrowUpRightFromSquare,
+  FaMapPin,
+  FaPlus,
+  FaMagnifyingGlass,
+  FaNetworkWired,
+  FaTrashCan,
+  FaUserTag,
+  FaPlugCircleBolt,
+} from 'react-icons/fa6';
 import { useNavigate } from 'react-router-dom';
+import { getSistemas, createSistema, updateSistema, deleteSistema, calcularCapacidadeTotal } from '../api/sistemas';
+import { getClientes } from '../api/clientes';
+import type { Sistema, Cliente } from '../models/domain';
+import SistemaFormModal, { type SistemaFormData, type Localizacao, type Subsistema, type Painel } from '../components/SistemaFormModal';
 
-// Mock data matching teste.html
-const mockSistemas = [
-  {
-    id: 'sys1',
-    nome: 'Unidade Tapajós 01',
-    status_operacional: 'online',
-    localizacao: { rua: 'Rua Vera Paz, Campus Tapajós', cep: '68040-000' },
-    capacidade_wp: 1000,
-    cliente: 'UFOPA',
-  },
-  {
-    id: 'sys2',
-    nome: 'Unidade Amazônia 02',
-    status_operacional: 'online',
-    localizacao: { rua: 'Av. Marechal Rondon, 100', cep: '68040-070' },
-    capacidade_wp: 1500,
-    cliente: 'UFOPA',
-  },
-  {
-    id: 'sys3',
-    nome: 'Unidade Oriximiná 03',
-    status_operacional: 'offline',
-    localizacao: { rua: 'Comunidade Ribeirinha', cep: '68270-000' },
-    capacidade_wp: 800,
-    cliente: 'Prefeitura',
-  },
-  {
-    id: 'sys4',
-    nome: 'Unidade Belterra 04',
-    status_operacional: 'alert',
-    localizacao: { rua: 'Estrada do Tapajós, Km 30', cep: '68143-000' },
-    capacidade_wp: 2000,
-    cliente: 'Comunidade',
-  },
-];
-
-type MockSistema = (typeof mockSistemas)[number];
 type NormalizedStatus = 'online' | 'offline' | 'alert';
+
+// Tipo interno para display
+type SistemaDisplay = Sistema & {
+  cliente_nome?: string;
+  status_operacional: NormalizedStatus;
+  capacidade_total_Wp: number;
+};
 
 const STATUS_STYLES: Record<NormalizedStatus, { border: string; badgeBg: string; badgeColor: string; bg: string; label: string }> = {
   online: {
@@ -94,11 +70,73 @@ const STATUS_STYLES: Record<NormalizedStatus, { border: string; badgeBg: string;
   },
 };
 
+// Calcula capacidade total baseado nos painéis
+function calcularCapacidadeLocalTotal(subsistemas: Subsistema[]): number {
+  return subsistemas.reduce((total: number, sub: Subsistema) => {
+    return total + sub.componentes.paineis.reduce((sum: number, p: Painel) => sum + (p.capacidade_Wp * p.quantidade), 0);
+  }, 0);
+}
+
+// Normaliza status do sistema
+function normalizeStatus(status?: string): NormalizedStatus {
+  if (!status) return 'offline';
+  const lower = status.toLowerCase();
+  if (lower === 'online' || lower === 'operacional') return 'online';
+  if (lower.includes('alerta') || lower.includes('erro') || lower === 'alert') return 'alert';
+  return 'offline';
+}
+
 export default function Instances() {
-  const [sistemas] = useState<MockSistema[]>(mockSistemas);
+  const [sistemas, setSistemas] = useState<SistemaDisplay[]>([]);
+  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingSystem, setEditingSystem] = useState<SistemaDisplay | null>(null);
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const navigate = useNavigate();
   const toast = useToast();
+
+  // Carrega dados da API
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const [sistemasData, clientesData] = await Promise.all([
+          getSistemas(),
+          getClientes().catch(() => [] as Cliente[])
+        ]);
+        
+        if (active) {
+          // Mapeia clientes para lookup rápido
+          const clienteMap = new Map(clientesData.map((c: Cliente) => [c._id, c.nome]));
+          
+          // Converte sistemas para display
+          const sistemasDisplay: SistemaDisplay[] = sistemasData.map((s: Sistema) => ({
+            ...s,
+            cliente_nome: s.id_cliente ? clienteMap.get(s.id_cliente) ?? 'Desconhecido' : 'Sem cliente',
+            status_operacional: normalizeStatus((s as Sistema & { status_operacional?: string }).status_operacional),
+            capacidade_total_Wp: calcularCapacidadeTotal([s]),
+          }));
+          
+          setSistemas(sistemasDisplay);
+          setClientes(clientesData.map((c: Cliente) => ({ id: c._id!, nome: c.nome })));
+        }
+      } catch (err) {
+        if (active) {
+          toast({
+            title: 'Erro ao carregar dados',
+            description: 'Verifique se o servidor está rodando.',
+            status: 'error',
+            duration: 5000,
+          });
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [toast]);
 
   const filteredSistemas = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -108,8 +146,8 @@ export default function Instances() {
         sistema.nome,
         sistema.localizacao?.rua,
         sistema.localizacao?.cep,
-        sistema.id,
-        sistema.cliente,
+        sistema._id,
+        sistema.cliente_nome,
       ]
         .filter(Boolean)
         .join(' ')
@@ -122,8 +160,7 @@ export default function Instances() {
     () =>
       filteredSistemas.reduce(
         (acc, sistema) => {
-          const status = normalizeStatus(sistema.status_operacional);
-          acc[status] += 1;
+          acc[sistema.status_operacional] += 1;
           return acc;
         },
         { online: 0, offline: 0, alert: 0 } as Record<NormalizedStatus, number>
@@ -136,13 +173,99 @@ export default function Instances() {
     setSearchTerm((value) => value.trim());
   };
 
-  const handleAction = (action: string) =>
-    toast({
-      title: `Ação: ${action}`,
-      description: 'Funcionalidade será implementada em breve.',
-      status: 'info',
-      duration: 3000,
-    });
+  const handleOpenNew = () => {
+    setEditingSystem(null);
+    onOpen();
+  };
+
+  const handleOpenEdit = (sistema: SistemaDisplay) => {
+    setEditingSystem(sistema);
+    onOpen();
+  };
+
+  const handleSubmit = async (data: SistemaFormData) => {
+    const clienteNome = clientes.find((c) => c.id === data.id_cliente)?.nome ?? 'Desconhecido';
+    const capacidadeTotal = calcularCapacidadeLocalTotal(data.subsistema);
+    
+    try {
+      if (editingSystem && editingSystem._id) {
+        // Edição
+        const updated = await updateSistema(editingSystem._id, data);
+        setSistemas((prev) =>
+          prev.map((s) =>
+            s._id === editingSystem._id
+              ? { 
+                  ...s, 
+                  ...updated, 
+                  cliente_nome: clienteNome,
+                  status_operacional: normalizeStatus((updated as Sistema & { status_operacional?: string }).status_operacional),
+                  capacidade_total_Wp: capacidadeTotal,
+                }
+              : s
+          )
+        );
+        toast({
+          title: 'Sistema atualizado',
+          description: `${data.nome} foi atualizado com sucesso.`,
+          status: 'success',
+          duration: 3000,
+        });
+      } else {
+        // Novo sistema
+        const created = await createSistema(data);
+        const newSystem: SistemaDisplay = {
+          ...created,
+          cliente_nome: clienteNome,
+          status_operacional: 'online',
+          capacidade_total_Wp: capacidadeTotal,
+        };
+        setSistemas((prev) => [...prev, newSystem]);
+        toast({
+          title: 'Sistema criado',
+          description: `${data.nome} foi criado com sucesso.`,
+          status: 'success',
+          duration: 3000,
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Erro ao salvar',
+        description: 'Não foi possível salvar o sistema.',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleRemove = async (sistema: SistemaDisplay) => {
+    if (!sistema._id) return;
+    
+    try {
+      await deleteSistema(sistema._id);
+      setSistemas((prev) => prev.filter((s) => s._id !== sistema._id));
+      toast({
+        title: 'Sistema removido',
+        description: `${sistema.nome} foi removido com sucesso.`,
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro ao remover',
+        description: 'Não foi possível remover o sistema.',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <Flex justify="center" align="center" minH="400px">
+        <Spinner size="xl" color="brand.400" thickness="4px" />
+      </Flex>
+    );
+  }
 
   return (
     <Stack spacing={8}>
@@ -150,7 +273,7 @@ export default function Instances() {
       <Flex direction={{ base: 'column', xl: 'row' }} justify="space-between" gap={6} align={{ base: 'flex-start', xl: 'center' }}>
         <Stack spacing={1}>
           <HStack spacing={2} color="teal.400" mb={1}>
-            <Icon as={FiServer} />
+            <Icon as={FaNetworkWired} />
             <Text fontSize="xs" textTransform="uppercase" letterSpacing="widest" fontWeight="bold">
               Administração
             </Text>
@@ -164,7 +287,7 @@ export default function Instances() {
         </Stack>
 
         <Button 
-          leftIcon={<FiPlus />} 
+          leftIcon={<FaPlus />} 
           px={6} 
           h={12} 
           fontWeight="bold" 
@@ -172,11 +295,26 @@ export default function Instances() {
           color="white" 
           _hover={{ bg: 'teal.400' }} 
           borderRadius="xl"
-          onClick={() => handleAction('Novo Sistema')}
+          onClick={handleOpenNew}
         >
           Novo Sistema
         </Button>
       </Flex>
+
+      {/* Modal de Formulário */}
+      <SistemaFormModal
+        isOpen={isOpen}
+        onClose={onClose}
+        onSubmit={handleSubmit}
+        clientes={clientes}
+        initialData={editingSystem ? {
+          nome: editingSystem.nome,
+          id_cliente: editingSystem.id_cliente ?? '',
+          localizacao: editingSystem.localizacao,
+          subsistema: editingSystem.subsistema,
+        } : undefined}
+        isEditing={!!editingSystem}
+      />
 
       {/* Search Bar */}
       <Box 
@@ -192,7 +330,7 @@ export default function Instances() {
         <Flex gap={4} direction={{ base: 'column', md: 'row' }} align="stretch">
           <InputGroup flex="1">
             <InputLeftElement pointerEvents="none" h="full">
-              <Icon as={FiSearch} color="gray.500" />
+              <Icon as={FaMagnifyingGlass} color="gray.500" />
             </InputLeftElement>
             <Input 
               value={searchTerm} 
@@ -233,11 +371,11 @@ export default function Instances() {
         <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={6}>
           {filteredSistemas.map((sistema) => (
             <SystemCard
-              key={sistema.id}
+              key={sistema._id}
               sistema={sistema}
-              onView={() => navigate(`/dados?sistema=${sistema.id}`)}
-              onEdit={() => handleAction('Editar ' + sistema.nome)}
-              onRemove={() => handleAction('Remover ' + sistema.nome)}
+              onView={() => navigate(`/analises?sistema=${sistema._id}`)}
+              onEdit={() => handleOpenEdit(sistema)}
+              onRemove={() => handleRemove(sistema)}
             />
           ))}
         </SimpleGrid>
@@ -247,8 +385,7 @@ export default function Instances() {
 }
 
 function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
-  const status = normalizeStatus(sistema.status_operacional);
-  const colors = STATUS_STYLES[status];
+  const colors = STATUS_STYLES[sistema.status_operacional];
   const location = sistema.localizacao?.rua ?? 'Localização não informada';
 
   return (
@@ -273,7 +410,7 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
               {sistema.nome}
             </Heading>
             <HStack spacing={2} color="gray.400" fontSize="sm">
-              <Icon as={FiMapPin} />
+              <Icon as={FaMapPin} />
               <Text>{location}</Text>
             </HStack>
           </Box>
@@ -294,15 +431,15 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
         <Box bg="slate.700" borderRadius="xl" p={4} mb={4}>
           <Stack spacing={3} fontSize="sm" color="gray.300">
             <HStack spacing={2}>
-              <Icon as={FiUser} color="gray.500" boxSize={4} />
+              <Icon as={FaUserTag} color="gray.500" boxSize={4} />
               <Text>
-                Cliente: <Text as="span" fontWeight="semibold" color="white">{sistema.cliente}</Text>
+                Cliente: <Text as="span" fontWeight="semibold" color="white">{sistema.cliente_nome}</Text>
               </Text>
             </HStack>
             <HStack spacing={2}>
-              <Icon as={FiZap} color="yellow.400" boxSize={4} />
+              <Icon as={FaPlugCircleBolt} color="yellow.400" boxSize={4} />
               <Text>
-                Capacidade: <Text as="span" fontWeight="semibold" color="yellow.400">{sistema.capacidade_wp.toLocaleString('pt-BR')} Wp</Text>
+                Capacidade: <Text as="span" fontWeight="semibold" color="yellow.400">{sistema.capacidade_total_Wp.toLocaleString('pt-BR')} Wp</Text>
               </Text>
             </HStack>
           </Stack>
@@ -313,7 +450,7 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
           <Tooltip label="Visualizar detalhes">
             <IconButton 
               aria-label="ver" 
-              icon={<FiExternalLink />} 
+              icon={<FaArrowUpRightFromSquare />} 
               size="sm"
               variant="ghost" 
               color="blue.300" 
@@ -325,7 +462,7 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
           <Tooltip label="Editar sistema">
             <IconButton 
               aria-label="editar" 
-              icon={<FiEdit2 />} 
+              icon={<FaPenToSquare />} 
               size="sm"
               variant="ghost" 
               color="yellow.300" 
@@ -337,7 +474,7 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
           <Tooltip label="Excluir sistema">
             <IconButton 
               aria-label="excluir" 
-              icon={<FiTrash2 />} 
+              icon={<FaTrashCan />} 
               size="sm"
               variant="ghost" 
               color="red.300" 
@@ -353,7 +490,7 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
 }
 
 type SystemCardProps = {
-  sistema: MockSistema;
+  sistema: SistemaDisplay;
   onView: () => void;
   onEdit: () => void;
   onRemove: () => void;
@@ -369,7 +506,7 @@ function EmptyState({ hasSystems }: { hasSystems: boolean }) {
       p={10} 
       textAlign="center"
     >
-      <Icon as={FiServer} boxSize={12} color="gray.600" mb={4} />
+      <Icon as={FaNetworkWired} boxSize={12} color="gray.600" mb={4} />
       <Heading size="md" mb={2}>
         {hasSystems ? 'Nenhum sistema encontrado' : 'Nenhum sistema cadastrado'}
       </Heading>
@@ -381,11 +518,3 @@ function EmptyState({ hasSystems }: { hasSystems: boolean }) {
     </Box>
   );
 }
-
-function normalizeStatus(status: string): NormalizedStatus {
-  const normalized = status.toLowerCase();
-  if (normalized.includes('alert') || normalized.includes('erro') || normalized.includes('atenção')) return 'alert';
-  if (normalized.includes('off') || normalized.includes('desconect')) return 'offline';
-  return 'online';
-}
-

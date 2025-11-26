@@ -4,6 +4,7 @@ import cors from 'cors';
 import { connect } from './db.js';
 import sistemas from './routes/sistemas.js';
 import leituras from './routes/leituras.js';
+import clientes from './routes/clientes.js';
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 app.use('/api/sistemas', sistemas);
 app.use('/api/leituras', leituras);
+app.use('/api/clientes', clientes);
 
 const PORT = process.env.PORT || 4000;
 

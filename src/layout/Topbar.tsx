@@ -1,5 +1,5 @@
 import { Box, Flex, Icon, Image, Text } from '@chakra-ui/react';
-import { FiUser } from 'react-icons/fi';
+import { FaCircleUser } from 'react-icons/fa6';
 import { useAuth } from '../context/AuthContext';
 
 export default function Topbar() {
@@ -46,7 +46,7 @@ export default function Topbar() {
             {user?.name ?? 'Nome do Usuário'}
           </Text>
           <Text fontSize="xs" color="brand.400" fontWeight="medium" textTransform="uppercase" letterSpacing="wider">
-            {user?.role ?? 'Função'}
+            {user?.role === 'admin' ? 'Administrador LABER' : 'Beneficiário'}
           </Text>
         </Box>
         <Flex
@@ -61,7 +61,7 @@ export default function Topbar() {
           borderColor="teal.600"
           boxShadow="lg"
         >
-          <Icon as={FiUser} boxSize={5} />
+          <Icon as={FaCircleUser} boxSize={5} />
         </Flex>
       </Flex>
     </Flex>

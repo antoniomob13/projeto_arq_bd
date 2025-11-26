@@ -12,6 +12,9 @@ export interface Sistema {
   subsistema: Subsistema[];
   status_operacional?: string;
   prioridade_teste?: boolean;
+  capacidade_wp?: number; // Calculado a partir dos painéis
+  createdAt?: ISODateString;
+  updatedAt?: ISODateString;
 }
 
 export interface Localizacao {
@@ -50,9 +53,41 @@ export interface Painel {
   quantidade: number;
 }
 
+export interface Inversor {
+  marca: string;
+  modelo: string;
+}
+
 export interface Controlador {
   marca: string;
   modelo: string;
+}
+
+// Cliente
+export interface Endereco {
+  rua?: string;
+  numero?: string;
+  bairro?: string;
+  complemento?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+}
+
+export interface Cliente {
+  _id?: ObjectIdString;
+  nome: string;
+  email: string;
+  senha?: string;
+  tipo: 'admin' | 'cliente';
+  telefone?: string;
+  cpf_cnpj?: string;
+  tipo_pessoa?: 'fisica' | 'juridica';
+  endereco?: Endereco;
+  sistema_id?: ObjectIdString | Sistema | null;
+  ativo?: boolean;
+  createdAt?: ISODateString;
+  updatedAt?: ISODateString;
 }
 
 // Leitura
@@ -84,4 +119,12 @@ export interface PainelEstado {
   tensao_V: number;
   corrente_A: number;
   potencia_W: number;
+}
+
+// Leitura atual para exibição em tempo real
+export interface LeituraAtual {
+  geracao_w: number;
+  consumo_w: number;
+  soc_bateria: number;
+  status: string;
 }

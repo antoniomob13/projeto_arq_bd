@@ -1,9 +1,70 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Monitoring Dashboard</title>
+    <title>LABER Premium - Monitoramento Fotovoltaico</title>
+    
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome 6.4.0 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      
+      /* Indicador de Status Premium (Pulse) */
+      @keyframes pulse-teal {
+        0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.7); }
+        70% { box-shadow: 0 0 0 12px rgba(45, 212, 191, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); }
+      }
+      @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
+        70% { box-shadow: 0 0 0 12px rgba(248, 113, 113, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+      }
+      .status-dot-online { animation: pulse-teal 2s infinite; }
+      .status-dot-error { animation: pulse-red 2s infinite; }
+      
+      /* Estilo da Bateria */
+      .battery-shell {
+        width: 40px;
+        height: 70px;
+        border: 2px solid #94a3b8;
+        border-radius: 6px;
+        position: relative;
+        padding: 1px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+      }
+      .battery-shell::before {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: 12px;
+        width: 12px;
+        height: 3px;
+        background: #94a3b8;
+        border-radius: 1px 1px 0 0;
+      }
+      .battery-level {
+        width: 100%;
+        border-radius: 4px;
+        transition: height 1s ease;
+      }
+      
+      /* Efeito de Gradiente Foco no Login */
+      .login-focus-bg {
+        background: radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.1) 0%, rgba(45, 212, 191, 0) 70%);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

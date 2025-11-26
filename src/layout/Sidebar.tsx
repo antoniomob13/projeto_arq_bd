@@ -1,7 +1,15 @@
 import { Box, Flex, Icon, Link as ChakraLink, Stack, Text } from '@chakra-ui/react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiGrid, FiSettings, FiUsers, FiHome, FiLogOut, FiBarChart2, FiBox } from 'react-icons/fi';
-import { PiCubeFill } from 'react-icons/pi';
+import { 
+  FaGaugeHigh, 
+  FaSolarPanel, 
+  FaChartLine, 
+  FaServer, 
+  FaNetworkWired, 
+  FaUsersGear, 
+  FaRightFromBracket,
+  FaCube 
+} from 'react-icons/fa6';
 import { useMemo, type ComponentType } from 'react';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,16 +26,16 @@ export default function Sidebar() {
   const navItems = useMemo<NavItem[]>(() => {
     if (isAdmin) {
       return [
-        { to: '/dashboard', label: 'Dashboard Geral', icon: FiHome },
-        { to: '/sistemas', label: 'Gestão de Sistemas', icon: FiSettings },
-        { to: '/clientes', label: 'Gestão de Clientes', icon: FiUsers },
+        { to: '/dashboard', label: 'Dashboard Geral', icon: FaServer },
+        { to: '/sistemas', label: 'Gestão de Sistemas', icon: FaNetworkWired },
+        { to: '/clientes', label: 'Gestão de Clientes', icon: FaUsersGear },
       ];
     }
     // Cliente
     return [
-      { to: '/dashboard', label: 'Dashboard Visão Geral', icon: FiGrid },
-      { to: '/equipamentos', label: 'Inventário e Subsistemas', icon: FiBox },
-      { to: '/analises', label: 'Gráficos & Análises', icon: FiBarChart2 },
+      { to: '/dashboard', label: 'Dashboard Visão Geral', icon: FaGaugeHigh },
+      { to: '/equipamentos', label: 'Inventário e Subsistemas', icon: FaSolarPanel },
+      { to: '/analises', label: 'Gráficos & Análises', icon: FaChartLine },
     ];
   }, [isAdmin]);
 
@@ -53,7 +61,7 @@ export default function Sidebar() {
         borderColor="slate.700"
         bg="rgba(15,23,42,0.5)"
       >
-        <Icon as={PiCubeFill} boxSize={7} color="brand.400" />
+        <Icon as={FaCube} boxSize={7} color="brand.400" />
         <Text fontSize="2xl" fontWeight="extrabold" letterSpacing="widest" color="gray.100">
           LABER
         </Text>
@@ -125,7 +133,7 @@ export default function Sidebar() {
               borderColor: 'red.500',
             }}
           >
-            <Icon as={FiLogOut} boxSize={5} />
+            <Icon as={FaRightFromBracket} boxSize={5} />
             <Text fontWeight="medium">Sair</Text>
           </Flex>
         </ChakraLink>

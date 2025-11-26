@@ -1,312 +1,446 @@
 import {
   Box,
+  Button,
   Flex,
+  FormControl,
+  FormLabel,
   Heading,
-  HStack,
   Icon,
-  SimpleGrid,
+  IconButton,
+  Input,
+  Select,
+  Spinner,
   Stack,
   Text,
-  Select,
 } from '@chakra-ui/react';
-import { useState } from 'react';
-import { FiActivity, FiBarChart2, FiTrendingUp, FiZap, FiSun, FiBattery } from 'react-icons/fi';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { FaFilter, FaArrowLeft } from 'react-icons/fa6';
+import {
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  Legend,
+  LinearScale,
+  LineElement,
+  PointElement,
+  Title,
+  Tooltip,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+import { getSistemaById, getSistemas } from '../api/sistemas';
+import { getLeituras, agruparLeiturasPorHora } from '../api/leituras';
+import type { Sistema, Leitura } from '../models/domain';
 
-// Mock data for charts (would be replaced by Chart.js or similar)
-const mockDailyData = [
-  { hora: '06:00', geracao: 50, consumo: 30 },
-  { hora: '09:00', geracao: 450, consumo: 180 },
-  { hora: '12:00', geracao: 850, consumo: 320 },
-  { hora: '15:00', geracao: 680, consumo: 250 },
-  { hora: '18:00', geracao: 200, consumo: 400 },
-  { hora: '21:00', geracao: 0, consumo: 350 },
-];
+// Registrar componentes do Chart.js
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
-const mockMonthlyData = [
-  { mes: 'Jan', geracao: 135, consumo: 98 },
-  { mes: 'Fev', geracao: 142, consumo: 105 },
-  { mes: 'Mar', geracao: 128, consumo: 92 },
-  { mes: 'Abr', geracao: 155, consumo: 110 },
-  { mes: 'Mai', geracao: 148, consumo: 102 },
-  { mes: 'Jun', geracao: 138, consumo: 95 },
-];
+// Gerar dados simulados quando não há leituras reais
+const gerarDadosSimulados = (capacidadeWp: number) => {
+  const horas = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00'];
+  const maxGen = capacidadeWp * 0.85;
+  
+  // Curva de geração solar (pico ao meio-dia)
+  const geracao = horas.map((_, i) => {
+    const hour = 6 + i * 2;
+    const peakHour = 12;
+    const spread = 3.5;
+    return Math.round(maxGen * Math.exp(-Math.pow(hour - peakHour, 2) / (2 * spread * spread)));
+  });
+  
+  // Curva de consumo (mais variável)
+  const consumo = geracao.map(g => Math.round(g * (0.3 + Math.random() * 0.4)));
+  
+  return { horas, geracao, consumo };
+};
 
 export default function Analytics() {
-  const [periodo, setPeriodo] = useState('hoje');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const sistemaIdParam = searchParams.get('sistema');
+  
+  const [sistemas, setSistemas] = useState<Sistema[]>([]);
+  const [sistemaAtual, setSistemaAtual] = useState<Sistema | null>(null);
+  const [leituras, setLeituras] = useState<Leitura[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingLeituras, setLoadingLeituras] = useState(false);
+  
+  const [dataInicial, setDataInicial] = useState('');
+  const [periodo, setPeriodo] = useState('diario');
+  const [variavel, setVariavel] = useState('potencia');
+  const [tipoGrafico, setTipoGrafico] = useState('linha');
 
-  // Calculate stats
-  const totalGeracao = mockDailyData.reduce((sum, d) => sum + d.geracao, 0);
-  const totalConsumo = mockDailyData.reduce((sum, d) => sum + d.consumo, 0);
-  const eficiencia = totalGeracao > 0 ? Math.round((totalConsumo / totalGeracao) * 100) : 0;
-  const economia = Math.round((totalGeracao - totalConsumo) * 0.75); // R$ 0.75/kWh
+  // Carregar lista de sistemas
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getSistemas();
+        setSistemas(data);
+      } catch (err) {
+        console.error('Erro ao carregar sistemas:', err);
+      }
+    })();
+  }, []);
+
+  // Carregar sistema selecionado
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      try {
+        if (sistemaIdParam) {
+          const sistema = await getSistemaById(sistemaIdParam);
+          if (active) {
+            setSistemaAtual(sistema);
+          }
+        } else if (sistemas.length > 0 && !sistemaAtual) {
+          // Se não há sistema na URL, usar o primeiro da lista
+          setSistemaAtual(sistemas[0]);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar sistema:', err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [sistemaIdParam, sistemas]);
+
+  // Carregar leituras do sistema
+  useEffect(() => {
+    let active = true;
+    if (!sistemaAtual) return;
+    
+    (async () => {
+      setLoadingLeituras(true);
+      try {
+        // Buscar leituras de todos os subsistemas do sistema
+        const subsistemaIds = sistemaAtual.subsistema?.map(s => s._id) || [];
+        const todasLeituras: Leitura[] = [];
+        
+        for (const subId of subsistemaIds) {
+          const leit = await getLeituras(subId);
+          todasLeituras.push(...leit);
+        }
+        
+        if (active) {
+          setLeituras(todasLeituras);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar leituras:', err);
+      } finally {
+        if (active) setLoadingLeituras(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [sistemaAtual]);
+
+  // Calcular capacidade do sistema
+  const capacidadeWp = useMemo(() => {
+    if (!sistemaAtual) return 1000;
+    let total = 0;
+    for (const sub of sistemaAtual.subsistema || []) {
+      for (const painel of sub.componentes?.paineis || []) {
+        total += (painel.capacidade_Wp || 0) * (painel.quantidade || 0);
+      }
+    }
+    return total || 1000;
+  }, [sistemaAtual]);
+
+  // Processar dados para o gráfico
+  const dados = useMemo(() => {
+    if (leituras.length > 0) {
+      const agrupados = agruparLeiturasPorHora(leituras);
+      return {
+        horas: agrupados.map(a => a.hora),
+        geracao: agrupados.map(a => a.geracao),
+        consumo: agrupados.map(a => a.consumo),
+      };
+    }
+    // Se não há leituras, gerar dados simulados
+    return gerarDadosSimulados(capacidadeWp);
+  }, [leituras, capacidadeWp]);
+
+  // Handler para trocar de sistema
+  const handleSistemaChange = (id: string) => {
+    setSearchParams({ sistema: id });
+  };
+
+  // Calcular max Y para o gráfico
+  const maxY = useMemo(() => {
+    const maxVal = Math.max(...dados.geracao, ...dados.consumo);
+    return Math.ceil(maxVal / 100) * 100 + 100;
+  }, [dados]);
+
+  const chartData = {
+    labels: dados.horas,
+    datasets: [
+      {
+        label: 'Geração Fotovoltaica (W)',
+        data: dados.geracao,
+        borderColor: 'rgba(45, 212, 191, 1)',
+        backgroundColor: 'rgba(45, 212, 191, 0.15)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4,
+        pointBackgroundColor: 'rgba(45, 212, 191, 1)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointHoverRadius: 6,
+      },
+      {
+        label: 'Consumo Médio (W)',
+        data: dados.consumo,
+        borderColor: 'rgba(234, 179, 8, 1)',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [5, 5],
+        fill: false,
+        tension: 0.4,
+        pointRadius: 4,
+        pointBackgroundColor: 'rgba(234, 179, 8, 1)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointHoverRadius: 6,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        align: 'center' as const,
+        labels: {
+          color: '#94a3b8',
+          usePointStyle: true,
+          pointStyle: 'rect',
+          padding: 20,
+          font: {
+            size: 12,
+          },
+        },
+      },
+      tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+        titleColor: '#fff',
+        bodyColor: '#94a3b8',
+        borderColor: 'rgba(51, 65, 85, 0.5)',
+        borderWidth: 1,
+        padding: 12,
+      },
+    },
+    scales: {
+      x: {
+        grid: {
+          color: 'rgba(51, 65, 85, 0.3)',
+          drawBorder: false,
+        },
+        ticks: {
+          color: '#64748b',
+          font: { size: 11 },
+        },
+      },
+      y: {
+        grid: {
+          color: 'rgba(51, 65, 85, 0.3)',
+          drawBorder: false,
+        },
+        ticks: {
+          color: '#64748b',
+          font: { size: 11 },
+          stepSize: 100,
+        },
+        beginAtZero: true,
+        max: maxY,
+      },
+    },
+  };
+
+  const inputStyles = {
+    bg: 'slate.700',
+    borderColor: 'whiteAlpha.100',
+    borderRadius: 'lg',
+    _hover: { borderColor: 'whiteAlpha.200' },
+    _focus: { borderColor: 'teal.400', boxShadow: '0 0 0 1px var(--chakra-colors-teal-400)' },
+  };
+
+  if (loading) {
+    return (
+      <Flex justify="center" align="center" minH="400px">
+        <Spinner size="xl" color="brand.400" thickness="4px" />
+      </Flex>
+    );
+  }
 
   return (
     <Stack spacing={8}>
       {/* Header */}
-      <Flex justify="space-between" align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={4}>
-        <Box>
-          <HStack spacing={2} color="teal.400" mb={2}>
-            <Icon as={FiActivity} />
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="widest" fontWeight="bold">
-              Análises
-            </Text>
-          </HStack>
-          <Heading size="lg" fontWeight="extrabold" mb={2}>
-            Gráficos & Análises
+      <Box>
+        <Flex align="center" gap={3} mb={2}>
+          <IconButton
+            aria-label="Voltar"
+            icon={<Icon as={FaArrowLeft} />}
+            variant="ghost"
+            color="gray.400"
+            _hover={{ bg: 'slate.700', color: 'brand.400' }}
+            borderRadius="lg"
+            size="sm"
+            onClick={() => navigate(-1)}
+          />
+          <Heading size="lg" fontWeight="extrabold">
+            Análises Detalhadas
           </Heading>
-          <Text color="gray.400">
-            Acompanhe o desempenho do seu sistema ao longo do tempo.
+        </Flex>
+        <Text color="gray.400" ml={10}>
+          Dados históricos para{' '}
+          <Text as="span" color="teal.400" fontWeight="medium">
+            {sistemaAtual?.nome || 'Sistema não selecionado'}
           </Text>
-        </Box>
+          .
+        </Text>
+      </Box>
 
-        <Select
-          value={periodo}
-          onChange={(e) => setPeriodo(e.target.value)}
-          w={{ base: 'full', md: '200px' }}
-          bg="slate.700"
-          borderColor="whiteAlpha.100"
-          borderRadius="xl"
-        >
-          <option value="hoje">Hoje</option>
-          <option value="semana">Esta Semana</option>
-          <option value="mes">Este Mês</option>
-          <option value="ano">Este Ano</option>
-        </Select>
-      </Flex>
-
-      {/* Stats Overview */}
-      <SimpleGrid columns={{ base: 2, lg: 4 }} spacing={4}>
-        <StatCard
-          icon={FiSun}
-          label="Geração Total"
-          value={`${(totalGeracao / 1000).toFixed(1)} kWh`}
-          trend="+12%"
-          trendUp={true}
-          color="yellow.400"
-        />
-        <StatCard
-          icon={FiZap}
-          label="Consumo Total"
-          value={`${(totalConsumo / 1000).toFixed(1)} kWh`}
-          trend="-5%"
-          trendUp={false}
-          color="blue.400"
-        />
-        <StatCard
-          icon={FiBattery}
-          label="Eficiência"
-          value={`${eficiencia}%`}
-          trend="+3%"
-          trendUp={true}
-          color="green.400"
-        />
-        <StatCard
-          icon={FiTrendingUp}
-          label="Economia Est."
-          value={`R$ ${economia}`}
-          trend="+8%"
-          trendUp={true}
-          color="teal.400"
-        />
-      </SimpleGrid>
-
-      {/* Charts */}
-      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
-        {/* Daily Chart */}
-        <Box bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="whiteAlpha.100" p={6}>
-          <HStack spacing={3} mb={6}>
-            <Icon as={FiBarChart2} color="teal.400" />
-            <Heading size="sm" fontWeight="bold">
-              Geração vs Consumo (Diário)
-            </Heading>
-          </HStack>
-
-          {/* Simple bar chart visualization */}
-          <Stack spacing={3}>
-            {mockDailyData.map((data, idx) => (
-              <Box key={idx}>
-                <Flex justify="space-between" mb={1}>
-                  <Text fontSize="xs" color="gray.400">{data.hora}</Text>
-                  <Text fontSize="xs" color="gray.500">
-                    {data.geracao}W / {data.consumo}W
-                  </Text>
-                </Flex>
-                <Flex gap={2} align="center">
-                  <Box flex="1" bg="slate.700" borderRadius="full" h="8px" overflow="hidden">
-                    <Box
-                      bg="linear-gradient(90deg, #14b8a6, #0ea5e9)"
-                      h="full"
-                      w={`${(data.geracao / 850) * 100}%`}
-                      borderRadius="full"
-                    />
-                  </Box>
-                  <Box flex="1" bg="slate.700" borderRadius="full" h="8px" overflow="hidden">
-                    <Box
-                      bg="linear-gradient(90deg, #3b82f6, #8b5cf6)"
-                      h="full"
-                      w={`${(data.consumo / 400) * 100}%`}
-                      borderRadius="full"
-                    />
-                  </Box>
-                </Flex>
-              </Box>
-            ))}
-          </Stack>
-
-          <Flex justify="center" gap={6} mt={4}>
-            <HStack spacing={2}>
-              <Box w={3} h={3} borderRadius="full" bg="teal.400" />
-              <Text fontSize="xs" color="gray.400">Geração</Text>
-            </HStack>
-            <HStack spacing={2}>
-              <Box w={3} h={3} borderRadius="full" bg="blue.400" />
-              <Text fontSize="xs" color="gray.400">Consumo</Text>
-            </HStack>
-          </Flex>
-        </Box>
-
-        {/* Monthly Chart */}
-        <Box bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="whiteAlpha.100" p={6}>
-          <HStack spacing={3} mb={6}>
-            <Icon as={FiTrendingUp} color="teal.400" />
-            <Heading size="sm" fontWeight="bold">
-              Histórico Mensal (kWh)
-            </Heading>
-          </HStack>
-
-          {/* Simple line chart visualization */}
-          <Flex justify="space-between" align="flex-end" h="200px" gap={4} px={2}>
-            {mockMonthlyData.map((data, idx) => (
-              <Flex key={idx} direction="column" align="center" flex="1">
-                <Flex direction="column" align="center" h="160px" justify="flex-end" gap={1}>
-                  <Box
-                    w="full"
-                    bg="linear-gradient(180deg, #14b8a6, #0d9488)"
-                    borderRadius="md"
-                    h={`${(data.geracao / 160) * 100}%`}
-                    minH="10px"
-                  />
-                  <Box
-                    w="full"
-                    bg="linear-gradient(180deg, #3b82f6, #2563eb)"
-                    borderRadius="md"
-                    h={`${(data.consumo / 160) * 100}%`}
-                    minH="10px"
-                  />
-                </Flex>
-                <Text fontSize="xs" color="gray.500" mt={2}>
-                  {data.mes}
-                </Text>
-              </Flex>
-            ))}
-          </Flex>
-
-          <Flex justify="center" gap={6} mt={4}>
-            <HStack spacing={2}>
-              <Box w={3} h={3} borderRadius="full" bg="teal.400" />
-              <Text fontSize="xs" color="gray.400">Geração (kWh)</Text>
-            </HStack>
-            <HStack spacing={2}>
-              <Box w={3} h={3} borderRadius="full" bg="blue.400" />
-              <Text fontSize="xs" color="gray.400">Consumo (kWh)</Text>
-            </HStack>
-          </Flex>
-        </Box>
-      </SimpleGrid>
-
-      {/* Performance Insights */}
+      {/* Filtros */}
       <Box bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="whiteAlpha.100" p={6}>
-        <HStack spacing={3} mb={4}>
-          <Icon as={FiActivity} color="teal.400" />
-          <Heading size="sm" fontWeight="bold">
-            Insights de Performance
-          </Heading>
-        </HStack>
+        <Flex 
+          direction={{ base: 'column', lg: 'row' }} 
+          gap={4} 
+          align={{ base: 'stretch', lg: 'flex-end' }}
+          wrap="wrap"
+        >
+          {/* Seletor de Sistema */}
+          <FormControl flex="1" minW="200px">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Sistema
+            </FormLabel>
+            <Select 
+              value={sistemaAtual?._id || ''} 
+              onChange={(e) => handleSistemaChange(e.target.value)} 
+              {...inputStyles}
+            >
+              {sistemas.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.nome}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
 
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
-          <InsightCard
-            title="Melhor Horário"
-            value="12:00 - 14:00"
-            description="Período de maior geração solar"
-            color="yellow.400"
-          />
-          <InsightCard
-            title="Pico de Consumo"
-            value="18:00 - 21:00"
-            description="Horário com maior demanda"
-            color="orange.400"
-          />
-          <InsightCard
-            title="Autonomia Média"
-            value="4.2 horas"
-            description="Tempo médio com baterias"
-            color="green.400"
-          />
-        </SimpleGrid>
+          <FormControl flex="1">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Data Inicial
+            </FormLabel>
+            <Input
+              type="date"
+              value={dataInicial}
+              onChange={(e) => setDataInicial(e.target.value)}
+              placeholder="dd/mm/aaaa"
+              {...inputStyles}
+            />
+          </FormControl>
+
+          <FormControl flex="1">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Período
+            </FormLabel>
+            <Select value={periodo} onChange={(e) => setPeriodo(e.target.value)} {...inputStyles}>
+              <option value="diario">Diário</option>
+              <option value="semanal">Semanal</option>
+              <option value="mensal">Mensal</option>
+              <option value="anual">Anual</option>
+            </Select>
+          </FormControl>
+
+          <FormControl flex="1">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Variável Principal
+            </FormLabel>
+            <Select value={variavel} onChange={(e) => setVariavel(e.target.value)} {...inputStyles}>
+              <option value="potencia">Potência (W)</option>
+              <option value="energia">Energia (kWh)</option>
+              <option value="tensao">Tensão (V)</option>
+              <option value="corrente">Corrente (A)</option>
+            </Select>
+          </FormControl>
+
+          <FormControl flex="1">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Tipo de Gráfico
+            </FormLabel>
+            <Select value={tipoGrafico} onChange={(e) => setTipoGrafico(e.target.value)} {...inputStyles}>
+              <option value="linha">Linha Suave</option>
+              <option value="barra">Barras</option>
+              <option value="area">Área</option>
+            </Select>
+          </FormControl>
+
+          <Button
+            leftIcon={<Icon as={FaFilter} />}
+            bg="blue.600"
+            color="white"
+            _hover={{ bg: 'blue.500' }}
+            borderRadius="xl"
+            px={6}
+            h="42px"
+            fontWeight="bold"
+            boxShadow="lg"
+          >
+            Aplicar Filtros
+          </Button>
+        </Flex>
+      </Box>
+
+      {/* Gráfico Principal */}
+      <Box 
+        bg="slate.800" 
+        borderRadius="2xl" 
+        borderWidth="1px" 
+        borderColor="whiteAlpha.100" 
+        p={6}
+        position="relative"
+      >
+        {loadingLeituras && (
+          <Flex 
+            position="absolute" 
+            top={0} 
+            left={0} 
+            right={0} 
+            bottom={0} 
+            bg="blackAlpha.600" 
+            justify="center" 
+            align="center"
+            borderRadius="2xl"
+            zIndex={10}
+          >
+            <Spinner size="xl" color="brand.400" thickness="4px" />
+          </Flex>
+        )}
+        <Box h="450px">
+          <Line data={chartData} options={chartOptions} />
+        </Box>
+        {leituras.length === 0 && !loadingLeituras && (
+          <Text color="gray.500" fontSize="sm" textAlign="center" mt={2}>
+            * Dados simulados - nenhuma leitura real disponível para este sistema
+          </Text>
+        )}
       </Box>
     </Stack>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-  trend,
-  trendUp,
-  color,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  trend: string;
-  trendUp: boolean;
-  color: string;
-}) {
-  return (
-    <Box bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="whiteAlpha.100" p={5}>
-      <HStack spacing={3} mb={3}>
-        <Box p={2} borderRadius="lg" bg={`${color}20`}>
-          <Icon as={icon} color={color} boxSize={5} />
-        </Box>
-        <Text fontSize="xs" color="gray.400" textTransform="uppercase">
-          {label}
-        </Text>
-      </HStack>
-      <Flex justify="space-between" align="flex-end">
-        <Text fontSize="2xl" fontWeight="bold">
-          {value}
-        </Text>
-        <Text fontSize="xs" color={trendUp ? 'green.400' : 'red.400'} fontWeight="medium">
-          {trend}
-        </Text>
-      </Flex>
-    </Box>
-  );
-}
-
-function InsightCard({
-  title,
-  value,
-  description,
-  color,
-}: {
-  title: string;
-  value: string;
-  description: string;
-  color: string;
-}) {
-  return (
-    <Box bg="slate.700" borderRadius="xl" p={4}>
-      <Text fontSize="xs" color="gray.400" textTransform="uppercase" mb={1}>
-        {title}
-      </Text>
-      <Text fontSize="lg" fontWeight="bold" color={color} mb={1}>
-        {value}
-      </Text>
-      <Text fontSize="xs" color="gray.500">
-        {description}
-      </Text>
-    </Box>
   );
 }

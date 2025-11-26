@@ -1,33 +1,10 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { loginCliente, type LoginResponse } from '../api/clientes';
 
-const STORAGE_KEY = 'laber.auth.email';
-
-type AllowedUserProfile = {
-  password: string;
-  name: string;
-  role: string;
-  tipo: 'admin' | 'cliente';
-  sistema_id: string | null;
-};
-
-const allowedUsers: Record<string, AllowedUserProfile> = {
-  'cliente@ufopa.br': {
-    password: '123',
-    name: 'Maria Ribeirinha',
-    role: 'Beneficiário',
-    tipo: 'cliente',
-    sistema_id: 'sys1',
-  },
-  'admin@ufopa.br': {
-    password: '123',
-    name: 'Dr. Carlos Pesquisador',
-    role: 'Administrador LABER',
-    tipo: 'admin',
-    sistema_id: null,
-  },
-};
+const STORAGE_KEY = 'laber.auth.user';
 
 export type AuthenticatedUser = {
+  _id: string;
   email: string;
   name: string;
   role: string;
@@ -40,33 +17,49 @@ export type AuthContextValue = {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isCliente: boolean;
-  login: (email: string, password: string) => void;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function mapLoginResponseToUser(response: LoginResponse): AuthenticatedUser {
+  // sistema_id pode ser string ou objeto populado
+  let sistemaId: string | null = null;
+  if (response.sistema_id) {
+    sistemaId = typeof response.sistema_id === 'string' 
+      ? response.sistema_id 
+      : response.sistema_id._id;
+  }
+  
+  return {
+    _id: response._id,
+    email: response.email,
+    name: response.nome,
+    role: response.tipo === 'admin' ? 'Administrador LABER' : 'Beneficiário',
+    tipo: response.tipo,
+    sistema_id: sistemaId,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthenticatedUser | null>(() => {
-    const storedEmail = localStorage.getItem(STORAGE_KEY);
-    if (!storedEmail) {
+    const storedUser = localStorage.getItem(STORAGE_KEY);
+    if (!storedUser) {
       return null;
     }
-    const profile = allowedUsers[storedEmail];
-    if (!profile) {
+    try {
+      return JSON.parse(storedUser);
+    } catch {
       return null;
     }
-    return { email: storedEmail, name: profile.name, role: profile.role, tipo: profile.tipo, sistema_id: profile.sistema_id };
   });
 
-  const login = (email: string, password: string) => {
-    const normalized = email.trim().toLowerCase();
-    const profile = allowedUsers[normalized];
-    if (!profile || profile.password !== password.trim()) {
-      throw new Error('Credenciais inválidas.');
-    }
-    setUser({ email: normalized, name: profile.name, role: profile.role, tipo: profile.tipo, sistema_id: profile.sistema_id });
-    localStorage.setItem(STORAGE_KEY, normalized);
+  const login = async (email: string, password: string) => {
+    const response = await loginCliente({ email, senha: password });
+    const authUser = mapLoginResponseToUser(response);
+    setUser(authUser);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
   };
 
   const logout = () => {

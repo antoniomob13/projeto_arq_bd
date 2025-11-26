@@ -18,24 +18,24 @@ import {
 } from '@chakra-ui/react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaBolt, FaEnvelope, FaLock, FaSignInAlt } from 'react-icons/fa';
+import { FaBoltLightning, FaEnvelope, FaLock, FaRightToBracket } from 'react-icons/fa6';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('operador@ufopa.br');
-  const [password, setPassword] = useState('energia123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
     try {
-      login(email, password);
+      await login(email, password);
       toast({ title: 'Bem-vindo de volta!', status: 'success', duration: 2000 });
-      navigate('/visualizacao', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err: any) {
       toast({
         title: 'Acesso negado',
@@ -78,13 +78,13 @@ export default function Login() {
             justify="center"
             boxShadow="focusGlow"
           >
-            <Icon as={FaBolt} boxSize={9} />
+            <Icon as={FaBoltLightning} boxSize={9} />
           </Flex>
           <Heading size="lg" letterSpacing="widest">
-            LABER Premium
+            LABER
           </Heading>
           <Text fontSize="sm" color="whiteAlpha.700" textTransform="uppercase" letterSpacing="widest">
-            Plataforma de Monitoramento Fotovoltaico
+            Plataforma de Monitoramento de Energia
           </Text>
         </Stack>
 
@@ -119,7 +119,7 @@ export default function Login() {
                 </InputLeftElement>
                 <Input
                   type="email"
-                  placeholder="operador@ufopa.br"
+                  placeholder="admin@ufopa.br"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -146,12 +146,12 @@ export default function Login() {
             <Button
               type="submit"
               size="lg"
-              rightIcon={<FaSignInAlt />}
+              rightIcon={<FaRightToBracket />}
               fontWeight="bold"
               isLoading={loading}
               boxShadow="focusGlow"
             >
-              Entrar no painel
+              ENTRAR NO PAINEL
             </Button>
 
             <Box bg="whiteAlpha.50" borderRadius="xl" p={4} borderWidth="1px" borderColor="whiteAlpha.100">
@@ -159,12 +159,14 @@ export default function Login() {
                 Credenciais de teste
               </Text>
               <SimpleGrid columns={2} spacing={3} fontSize="xs" color="whiteAlpha.800">
-                <Text>Operador:</Text>
-                <Code color="brand.200" bg="whiteAlpha.100">operador@ufopa.br</Code>
                 <Text>Administrador:</Text>
-                <Code color="brand.200" bg="whiteAlpha.100">admin@ufopa.br</Code>
-                <Text>Senha padrão:</Text>
-                <Code color="brand.200" bg="whiteAlpha.100">energia123</Code>
+                <Code color="brand.200" bg="whiteAlpha.100">admin@laber.ufopa.br</Code>
+                <Text>Senha:</Text>
+                <Code color="brand.200" bg="whiteAlpha.100">admin123</Code>
+                <Text>Cliente:</Text>
+                <Code color="brand.200" bg="whiteAlpha.100">joao@ufopa.br</Code>
+                <Text>Senha:</Text>
+                <Code color="brand.200" bg="whiteAlpha.100">123456</Code>
               </SimpleGrid>
             </Box>
           </Stack>

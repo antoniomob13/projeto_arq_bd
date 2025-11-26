@@ -6,6 +6,7 @@
     "dev": "node --loader ts-node/esm src/index.ts",
     "build": "tsc -p .",
     "start": "node dist/index.js",
+    "seed": "node --loader ts-node/esm src/scripts/seed.ts",
     "seed:priority": "node --loader ts-node/esm src/scripts/createPrioritySystem.ts"
   },
   "dependencies": {
