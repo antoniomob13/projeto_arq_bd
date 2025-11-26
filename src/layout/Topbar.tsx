@@ -1,17 +1,69 @@
-import { Box, Flex, HStack, Spacer, Text } from '@chakra-ui/react';
-import { MdAccountCircle } from 'react-icons/md';
+import { Box, Flex, Icon, Image, Text } from '@chakra-ui/react';
+import { FiUser } from 'react-icons/fi';
+import { useAuth } from '../context/AuthContext';
 
-export default function Topbar({ userName = 'Usuário' }: { userName?: string }) {
+export default function Topbar() {
+  const { user } = useAuth();
+
   return (
-    <Box as="header" bg="blue.900" borderBottomWidth="1px" borderColor="gray.700" px={4} py={2}>
-      <Flex align="center" gap={4}>
-        <Text fontWeight="semibold">Monitor Manager</Text>
-        <Spacer />
-        <HStack spacing={2}>
-          <MdAccountCircle size={22} />
-          <Text>{userName}</Text>
-        </HStack>
+    <Flex
+      as="header"
+      h="16"
+      bg="slate.800"
+      borderBottomWidth="1px"
+      borderColor="rgba(51,65,85,0.5)"
+      px={6}
+      align="center"
+      justify="space-between"
+      boxShadow="xl"
+      zIndex={10}
+    >
+      {/* Logo UFOPA */}
+      <Flex align="center">
+        <Image
+          src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Marca_UFOPA_2010.jpg/1200px-Marca_UFOPA_2010.jpg"
+          alt="Logo UFOPA"
+          h={8}
+          w="auto"
+          opacity={0.8}
+          filter="grayscale(1)"
+          transition="all 0.2s"
+          _hover={{ filter: 'grayscale(0)' }}
+        />
       </Flex>
-    </Box>
+
+      {/* Usuário */}
+      <Flex
+        align="center"
+        cursor="pointer"
+        p={2}
+        borderRadius="xl"
+        transition="all 0.2s"
+        _hover={{ bg: 'rgba(51,65,85,0.7)' }}
+      >
+        <Box textAlign="right" mr={4} display={{ base: 'none', sm: 'block' }}>
+          <Text fontSize="base" fontWeight="semibold" color="gray.100">
+            {user?.name ?? 'Nome do Usuário'}
+          </Text>
+          <Text fontSize="xs" color="brand.400" fontWeight="medium" textTransform="uppercase" letterSpacing="wider">
+            {user?.role ?? 'Função'}
+          </Text>
+        </Box>
+        <Flex
+          h={10}
+          w={10}
+          borderRadius="full"
+          bg="teal.800"
+          color="brand.400"
+          align="center"
+          justify="center"
+          borderWidth="2px"
+          borderColor="teal.600"
+          boxShadow="lg"
+        >
+          <Icon as={FiUser} boxSize={5} />
+        </Flex>
+      </Flex>
+    </Flex>
   );
 }

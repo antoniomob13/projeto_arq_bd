@@ -1,229 +1,391 @@
-import { Box, Button, ButtonGroup, Flex, Input, SimpleGrid, Spinner, Table, Tbody, Td, Th, Thead, Tr, Text } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
-import ChartPlaceholder from '../components/ChartPlaceholder';
-import { apiGet } from '../api/client';
-import type { Cliente, Sistema } from '../models/domain';
+import {
+  Badge,
+  Box,
+  Button,
+  Flex,
+  Heading,
+  HStack,
+  Icon,
+  IconButton,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  SimpleGrid,
+  Stack,
+  Text,
+  Tooltip,
+  useToast,
+} from '@chakra-ui/react';
+import type { FormEvent } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  FiEdit2,
+  FiExternalLink,
+  FiMapPin,
+  FiPlus,
+  FiSearch,
+  FiServer,
+  FiTrash2,
+  FiUser,
+  FiZap,
+} from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 
-type ViewMode = 'clientes' | 'sistemas';
+// Mock data matching teste.html
+const mockSistemas = [
+  {
+    id: 'sys1',
+    nome: 'Unidade Tapajós 01',
+    status_operacional: 'online',
+    localizacao: { rua: 'Rua Vera Paz, Campus Tapajós', cep: '68040-000' },
+    capacidade_wp: 1000,
+    cliente: 'UFOPA',
+  },
+  {
+    id: 'sys2',
+    nome: 'Unidade Amazônia 02',
+    status_operacional: 'online',
+    localizacao: { rua: 'Av. Marechal Rondon, 100', cep: '68040-070' },
+    capacidade_wp: 1500,
+    cliente: 'UFOPA',
+  },
+  {
+    id: 'sys3',
+    nome: 'Unidade Oriximiná 03',
+    status_operacional: 'offline',
+    localizacao: { rua: 'Comunidade Ribeirinha', cep: '68270-000' },
+    capacidade_wp: 800,
+    cliente: 'Prefeitura',
+  },
+  {
+    id: 'sys4',
+    nome: 'Unidade Belterra 04',
+    status_operacional: 'alert',
+    localizacao: { rua: 'Estrada do Tapajós, Km 30', cep: '68143-000' },
+    capacidade_wp: 2000,
+    cliente: 'Comunidade',
+  },
+];
+
+type MockSistema = (typeof mockSistemas)[number];
+type NormalizedStatus = 'online' | 'offline' | 'alert';
+
+const STATUS_STYLES: Record<NormalizedStatus, { border: string; badgeBg: string; badgeColor: string; bg: string; label: string }> = {
+  online: {
+    border: 'linear-gradient(90deg, #15c1b0 0%, #0ea5e9 100%)',
+    badgeBg: 'rgba(20,184,166,0.2)',
+    badgeColor: 'teal.300',
+    bg: 'linear-gradient(145deg, rgba(15,118,110,0.35) 0%, rgba(15,23,42,0.95) 70%)',
+    label: 'Operacional',
+  },
+  offline: {
+    border: 'linear-gradient(90deg, #94a3b8 0%, #475569 100%)',
+    badgeBg: 'rgba(148,163,184,0.18)',
+    badgeColor: 'gray.400',
+    bg: 'linear-gradient(145deg, rgba(71,85,105,0.3) 0%, rgba(15,23,42,0.95) 70%)',
+    label: 'Desconectado',
+  },
+  alert: {
+    border: 'linear-gradient(90deg, #f97316 0%, #f43f5e 100%)',
+    badgeBg: 'rgba(248,113,113,0.2)',
+    badgeColor: 'orange.300',
+    bg: 'linear-gradient(145deg, rgba(127,29,29,0.45) 0%, rgba(15,23,42,0.95) 75%)',
+    label: 'Atenção',
+  },
+};
 
 export default function Instances() {
-  const [view, setView] = useState<ViewMode>('clientes');
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [sistemas, setSistemas] = useState<Sistema[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
+  const [sistemas] = useState<MockSistema[]>(mockSistemas);
+  const [searchTerm, setSearchTerm] = useState('');
+  const navigate = useNavigate();
+  const toast = useToast();
 
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        if (view === 'clientes') {
-          const data = await apiGet<Cliente[]>('/clientes');
-          if (!active) return;
-          setClientes(data);
-        } else {
-          const data = await apiGet<Sistema[]>('/sistemas');
-          if (!active) return;
-          setSistemas(data);
-        }
-      } catch (err) {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : 'Erro ao carregar dados.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      active = false;
-    };
-  }, [view, refreshTick]);
-
-  useEffect(() => {
-    if (view !== 'sistemas') {
-      setSelectedSystemId(null);
-      return;
-    }
-    if (sistemas.length === 0) {
-      setSelectedSystemId(null);
-      return;
-    }
-    setSelectedSystemId((prev) => {
-      if (prev && sistemas.some((s) => s._id === prev)) {
-        return prev;
-      }
-      return sistemas[0]._id;
+  const filteredSistemas = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return sistemas;
+    return sistemas.filter((sistema) => {
+      const haystack = [
+        sistema.nome,
+        sistema.localizacao?.rua,
+        sistema.localizacao?.cep,
+        sistema.id,
+        sistema.cliente,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
     });
-  }, [view, sistemas]);
+  }, [sistemas, searchTerm]);
 
-  const selectedSystem = useMemo(() => {
-    if (!selectedSystemId) return undefined;
-    return sistemas.find((s) => s._id === selectedSystemId);
-  }, [sistemas, selectedSystemId]);
+  const statusCount = useMemo(
+    () =>
+      filteredSistemas.reduce(
+        (acc, sistema) => {
+          const status = normalizeStatus(sistema.status_operacional);
+          acc[status] += 1;
+          return acc;
+        },
+        { online: 0, offline: 0, alert: 0 } as Record<NormalizedStatus, number>
+      ),
+    [filteredSistemas]
+  );
 
-  const stats = useMemo(() => {
-    if (view === 'sistemas' && selectedSystem) {
-      const metrics = computeSystemMetrics(selectedSystem);
-      return [
-        { label: 'Potência atual (kW)', value: metrics.potenciaAtualKw },
-        { label: 'Energia do dia (kWh)', value: metrics.energiaDiaKWh },
-        { label: 'Alertas ativos', value: metrics.alertasAtivos },
-      ];
-    }
-    return [
-      { label: 'Potência atual (kW)', value: 'Selecione um sistema' },
-      { label: 'Energia do dia (kWh)', value: '-' },
-      { label: 'Alertas ativos', value: '-' },
-    ];
-  }, [view, selectedSystem]);
+  const handleSearch = (event: FormEvent) => {
+    event.preventDefault();
+    setSearchTerm((value) => value.trim());
+  };
 
-  const { columns, rows, emptyMessage } = useMemo(() => {
-    if (view === 'clientes') {
-      return {
-        columns: ['Nome', 'CPF/CNPJ', 'Tipo', 'Cidade/UF', 'Contato', 'Sistemas'],
-        rows: clientes.map((cliente) => ({
-          id: cliente._id,
-          cells: [
-            cliente.nome,
-            cliente.cpf_cnpj,
-            cliente.tipo_pessoa === 'J' ? 'Jurídica' : 'Física',
-            `${cliente.endereco?.cidade ?? '-'} / ${cliente.endereco?.estado ?? ''}`,
-            cliente.email || cliente.telefone || '-',
-            (cliente.sistemas?.length ?? 0).toString(),
-          ],
-        })),
-        emptyMessage: 'Nenhum cliente cadastrado.',
-      };
-    }
-
-    return {
-      columns: ['Sistema', 'Cliente ID', 'Tipo', 'Localização', 'Instalação', 'Painéis', 'Baterias'],
-      rows: sistemas.map((sistema) => {
-        const sub = sistema.subsistema?.[0];
-        const comp = sub?.componentes;
-        const totalPaineis = comp?.paineis?.reduce((sum, p) => sum + (p.quantidade ?? 0), 0) ?? 0;
-        const totalBaterias = comp?.baterias?.reduce((sum, b) => sum + (b.quantidade ?? 0), 0) ?? 0;
-        return {
-          id: sistema._id,
-          cells: [
-            sistema.nome,
-            sistema.id_cliente,
-            sub?.tipo_sistema ?? '-',
-            [sistema.localizacao?.rua, sistema.localizacao?.bairro].filter(Boolean).join(', ') || '-',
-            sub?.data_instalacao ? new Date(sub.data_instalacao).toLocaleDateString('pt-BR') : '-',
-            totalPaineis.toString(),
-            totalBaterias.toString(),
-          ],
-        };
-      }),
-      emptyMessage: 'Nenhum sistema cadastrado.',
-    };
-  }, [view, clientes, sistemas]);
-
-  const handleRefresh = () => setRefreshTick((tick) => tick + 1);
+  const handleAction = (action: string) =>
+    toast({
+      title: `Ação: ${action}`,
+      description: 'Funcionalidade será implementada em breve.',
+      status: 'info',
+      duration: 3000,
+    });
 
   return (
-    <Box p={4}>
-      <Text fontSize="2xl" mb={4} fontWeight="semibold">Usinas / Visualização</Text>
+    <Stack spacing={8}>
+      {/* Header */}
+      <Flex direction={{ base: 'column', xl: 'row' }} justify="space-between" gap={6} align={{ base: 'flex-start', xl: 'center' }}>
+        <Stack spacing={1}>
+          <HStack spacing={2} color="teal.400" mb={1}>
+            <Icon as={FiServer} />
+            <Text fontSize="xs" textTransform="uppercase" letterSpacing="widest" fontWeight="bold">
+              Administração
+            </Text>
+          </HStack>
+          <Heading size="lg" fontWeight="extrabold">
+            Gestão de Sistemas
+          </Heading>
+          <Text color="gray.400" maxW="3xl">
+            Gerencie todos os sistemas fotovoltaicos cadastrados na plataforma.
+          </Text>
+        </Stack>
 
-      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} mb={4}>
-        {stats.map((stat) => (
-          <StatsCard key={stat.label} label={stat.label} value={stat.value} />
-        ))}
-      </SimpleGrid>
-
-      <Flex mb={3} gap={3} align={{ base: 'stretch', md: 'center' }} direction={{ base: 'column', md: 'row' }}>
-        <Input placeholder="Pesquisar (em breve)" maxW="400px" isDisabled />
-        <Flex align="center" gap={2}>
-          <ButtonGroup size="sm" variant="outline">
-            <Button onClick={() => setView('clientes')} isActive={view === 'clientes'}>Clientes</Button>
-            <Button onClick={() => setView('sistemas')} isActive={view === 'sistemas'}>Sistemas</Button>
-          </ButtonGroup>
-          <Button size="sm" onClick={handleRefresh}>Atualizar</Button>
-        </Flex>
+        <Button 
+          leftIcon={<FiPlus />} 
+          px={6} 
+          h={12} 
+          fontWeight="bold" 
+          bg="teal.500" 
+          color="white" 
+          _hover={{ bg: 'teal.400' }} 
+          borderRadius="xl"
+          onClick={() => handleAction('Novo Sistema')}
+        >
+          Novo Sistema
+        </Button>
       </Flex>
 
-      <Box mb={4}>
-        <ChartPlaceholder title="Visualização gráfica" />
+      {/* Search Bar */}
+      <Box 
+        as="form" 
+        onSubmit={handleSearch} 
+        bg="slate.800" 
+        borderRadius="2xl" 
+        borderWidth="1px" 
+        borderColor="whiteAlpha.100" 
+        px={{ base: 4, md: 6 }} 
+        py={5}
+      >
+        <Flex gap={4} direction={{ base: 'column', md: 'row' }} align="stretch">
+          <InputGroup flex="1">
+            <InputLeftElement pointerEvents="none" h="full">
+              <Icon as={FiSearch} color="gray.500" />
+            </InputLeftElement>
+            <Input 
+              value={searchTerm} 
+              onChange={(event) => setSearchTerm(event.target.value)} 
+              placeholder="Buscar por nome, localização ou cliente..." 
+              height={12} 
+              borderRadius="xl" 
+              bg="slate.700" 
+              borderColor="whiteAlpha.100"
+              _hover={{ borderColor: 'whiteAlpha.200' }} 
+              _focus={{ borderColor: 'teal.400', boxShadow: '0 0 0 1px var(--chakra-colors-teal-400)' }} 
+            />
+          </InputGroup>
+          <Button 
+            type="submit" 
+            bg="teal.500" 
+            _hover={{ bg: 'teal.400' }} 
+            px={8} 
+            h={12} 
+            fontWeight="bold" 
+            borderRadius="xl"
+          >
+            Buscar
+          </Button>
+        </Flex>
+        <Text mt={3} fontSize="sm" color="gray.500">
+          Exibindo {filteredSistemas.length} de {sistemas.length} sistemas • 
+          <Text as="span" color="teal.400" fontWeight="medium"> {statusCount.online} Online</Text> • 
+          <Text as="span" color="gray.400"> {statusCount.offline} Offline</Text> • 
+          <Text as="span" color="orange.400"> {statusCount.alert} Alerta</Text>
+        </Text>
       </Box>
 
-      <Box bg="gray.800" borderWidth="1px" borderColor="gray.700" borderRadius="md" overflowX="auto">
-        <Table size="sm" variant="simple">
-          <Thead>
-            <Tr>
-              {columns.map((col) => <Th key={col}>{col}</Th>)}
-            </Tr>
-          </Thead>
-          <Tbody>
-            {loading ? (
-              <Tr>
-                <Td colSpan={columns.length}>
-                  <Flex align="center" justify="center" py={6} gap={2}>
-                    <Spinner size="sm" />
-                    <Text>Carregando...</Text>
-                  </Flex>
-                </Td>
-              </Tr>
-            ) : error ? (
-              <Tr>
-                <Td colSpan={columns.length}>
-                  <Text color="red.300">{error}</Text>
-                </Td>
-              </Tr>
-            ) : rows.length === 0 ? (
-              <Tr>
-                <Td colSpan={columns.length}>
-                  <Text color="gray.400">{emptyMessage}</Text>
-                </Td>
-              </Tr>
-            ) : (
-              rows.map((row) => (
-                <Tr
-                  key={row.id}
-                  onClick={() => view === 'sistemas' && setSelectedSystemId(row.id)}
-                  cursor={view === 'sistemas' ? 'pointer' : 'default'}
-                  bg={view === 'sistemas' && row.id === selectedSystemId ? 'gray.700' : undefined}
-                >
-                  {row.cells.map((cell, idx) => (
-                    <Td key={`${row.id}-${idx}`}>{cell}</Td>
-                  ))}
-                </Tr>
-              ))
-            )}
-          </Tbody>
-        </Table>
-      </Box>
-      {/* Botão Adicionar e modal foram movidos para a página de Dados */}
-    </Box>
+      {/* Systems Grid */}
+      {filteredSistemas.length === 0 ? (
+        <EmptyState hasSystems={sistemas.length > 0} />
+      ) : (
+        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={6}>
+          {filteredSistemas.map((sistema) => (
+            <SystemCard
+              key={sistema.id}
+              sistema={sistema}
+              onView={() => navigate(`/dados?sistema=${sistema.id}`)}
+              onEdit={() => handleAction('Editar ' + sistema.nome)}
+              onRemove={() => handleAction('Remover ' + sistema.nome)}
+            />
+          ))}
+        </SimpleGrid>
+      )}
+    </Stack>
   );
 }
 
-function StatsCard({ label, value }: { label: string; value: string | number }) {
+function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
+  const status = normalizeStatus(sistema.status_operacional);
+  const colors = STATUS_STYLES[status];
+  const location = sistema.localizacao?.rua ?? 'Localização não informada';
+
   return (
-    <Box bg="gray.800" borderWidth="1px" borderColor="gray.700" p={4} borderRadius="md">
-      <Text fontSize="sm" color="gray.300">{label}</Text>
-      <Text fontSize="2xl" fontWeight="bold" mt={2}>{typeof value === 'number' ? value.toLocaleString('pt-BR') : value}</Text>
+    <Box 
+      borderRadius="2xl" 
+      p="2px" 
+      bg={colors.border} 
+      boxShadow="xl"
+      transition="all 0.3s ease" 
+      _hover={{ transform: 'translateY(-4px)', boxShadow: '2xl' }}
+    >
+      <Box 
+        bg="slate.800" 
+        borderRadius="2xl" 
+        p={6} 
+        h="full"
+      >
+        {/* Header */}
+        <Flex justify="space-between" align="flex-start" mb={4}>
+          <Box>
+            <Heading size="md" fontWeight="bold" mb={2}>
+              {sistema.nome}
+            </Heading>
+            <HStack spacing={2} color="gray.400" fontSize="sm">
+              <Icon as={FiMapPin} />
+              <Text>{location}</Text>
+            </HStack>
+          </Box>
+          <Badge 
+            px={3} 
+            py={1} 
+            borderRadius="full" 
+            bg={colors.badgeBg} 
+            color={colors.badgeColor} 
+            fontSize="xs" 
+            fontWeight="bold"
+          >
+            {colors.label}
+          </Badge>
+        </Flex>
+
+        {/* Info Box */}
+        <Box bg="slate.700" borderRadius="xl" p={4} mb={4}>
+          <Stack spacing={3} fontSize="sm" color="gray.300">
+            <HStack spacing={2}>
+              <Icon as={FiUser} color="gray.500" boxSize={4} />
+              <Text>
+                Cliente: <Text as="span" fontWeight="semibold" color="white">{sistema.cliente}</Text>
+              </Text>
+            </HStack>
+            <HStack spacing={2}>
+              <Icon as={FiZap} color="yellow.400" boxSize={4} />
+              <Text>
+                Capacidade: <Text as="span" fontWeight="semibold" color="yellow.400">{sistema.capacidade_wp.toLocaleString('pt-BR')} Wp</Text>
+              </Text>
+            </HStack>
+          </Stack>
+        </Box>
+
+        {/* Actions */}
+        <Flex justify="flex-end" gap={2}>
+          <Tooltip label="Visualizar detalhes">
+            <IconButton 
+              aria-label="ver" 
+              icon={<FiExternalLink />} 
+              size="sm"
+              variant="ghost" 
+              color="blue.300" 
+              bg="rgba(59,130,246,0.15)" 
+              _hover={{ bg: 'rgba(59,130,246,0.25)' }} 
+              onClick={onView} 
+            />
+          </Tooltip>
+          <Tooltip label="Editar sistema">
+            <IconButton 
+              aria-label="editar" 
+              icon={<FiEdit2 />} 
+              size="sm"
+              variant="ghost" 
+              color="yellow.300" 
+              bg="rgba(234,179,8,0.15)" 
+              _hover={{ bg: 'rgba(234,179,8,0.25)' }} 
+              onClick={onEdit} 
+            />
+          </Tooltip>
+          <Tooltip label="Excluir sistema">
+            <IconButton 
+              aria-label="excluir" 
+              icon={<FiTrash2 />} 
+              size="sm"
+              variant="ghost" 
+              color="red.300" 
+              bg="rgba(248,113,113,0.15)" 
+              _hover={{ bg: 'rgba(248,113,113,0.25)' }} 
+              onClick={onRemove} 
+            />
+          </Tooltip>
+        </Flex>
+      </Box>
     </Box>
   );
 }
 
-function computeSystemMetrics(sistema: Sistema) {
-  const sub = sistema.subsistema?.[0];
-  const comp = sub?.componentes;
-  const totalWp = comp?.paineis?.reduce((sum, p) => sum + (p.capacidade_Wp ?? 0) * (p.quantidade ?? 0), 0) ?? 0;
-  const potenciaNominalKw = totalWp / 1000;
-  const potenciaAtualKw = potenciaNominalKw * 0.82;
-  const energiaDiaKWh = potenciaAtualKw * 4;
-  const alertasAtivos = (comp?.baterias?.length ?? 0) === 0 ? 1 : 0;
-  const format = (value: number) => (Number.isFinite(value) && value > 0 ? Number(value.toFixed(2)).toLocaleString('pt-BR') : '-');
-  return {
-    potenciaAtualKw: format(potenciaAtualKw),
-    energiaDiaKWh: format(energiaDiaKWh),
-    alertasAtivos,
-  };
+type SystemCardProps = {
+  sistema: MockSistema;
+  onView: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+};
+
+function EmptyState({ hasSystems }: { hasSystems: boolean }) {
+  return (
+    <Box 
+      borderRadius="2xl" 
+      borderWidth="1px" 
+      borderColor="whiteAlpha.100" 
+      bg="slate.800" 
+      p={10} 
+      textAlign="center"
+    >
+      <Icon as={FiServer} boxSize={12} color="gray.600" mb={4} />
+      <Heading size="md" mb={2}>
+        {hasSystems ? 'Nenhum sistema encontrado' : 'Nenhum sistema cadastrado'}
+      </Heading>
+      <Text color="gray.500">
+        {hasSystems 
+          ? 'Tente outros termos de busca.' 
+          : 'Clique em "Novo Sistema" para cadastrar o primeiro sistema.'}
+      </Text>
+    </Box>
+  );
+}
+
+function normalizeStatus(status: string): NormalizedStatus {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('alert') || normalized.includes('erro') || normalized.includes('atenção')) return 'alert';
+  if (normalized.includes('off') || normalized.includes('desconect')) return 'offline';
+  return 'online';
 }
 

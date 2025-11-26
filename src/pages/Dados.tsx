@@ -22,51 +22,31 @@ import {
   useToast,
   Spinner,
   Flex,
+  Tag,
 } from '@chakra-ui/react';
 import { AddIcon, EditIcon, DeleteIcon } from '@chakra-ui/icons';
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../api/client';
-import type { Cliente, Sistema } from '../models/domain';
+import type { Sistema } from '../models/domain';
 import { historyStore } from '../services/historyStore';
+import ChartPlaceholder from '../components/ChartPlaceholder';
 
 export default function Dados() {
   const currentUser = 'uL7';
-  const addDisc = useDisclosure();
   const addSysDisc = useDisclosure();
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [sistemas, setSistemas] = useState<Sistema[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [deleteType, setDeleteType] = useState<'cliente' | 'sistema'>('cliente');
   const [deleteTarget, setDeleteTarget] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [editType, setEditType] = useState<'cliente' | 'sistema'>('cliente');
   const [editTarget, setEditTarget] = useState('');
   const [editSubmitLoading, setEditSubmitLoading] = useState(false);
 
-  const buildClientePayload = (fd: FormData) => ({
-    nome: fd.get('nome') as string,
-    cpf_cnpj: fd.get('cpf_cnpj') as string,
-    tipo_pessoa: fd.get('tipo_pessoa') as string,
-    data_nasc: fd.get('data_nasc') ? new Date(fd.get('data_nasc') as string) : undefined,
-    telefone: fd.get('telefone') as string,
-    email: fd.get('email') as string,
-    endereco: {
-      rua: fd.get('endereco.rua') as string,
-      bairro: fd.get('endereco.bairro') as string,
-      complemento: fd.get('endereco.complemento') as string,
-      cep: fd.get('endereco.cep') as string,
-      cidade: fd.get('endereco.cidade') as string,
-      estado: fd.get('endereco.estado') as string,
-    },
-  });
-
   const buildSistemaPayload = (fd: FormData) => ({
-    id_cliente: fd.get('id_cliente') as string,
     nome: fd.get('nome') as string,
     localizacao: {
       latitude: parseFloat(fd.get('localizacao.latitude') as string) || 0,
@@ -117,75 +97,67 @@ export default function Dados() {
     ],
   });
 
-  const loadEntities = useCallback(async () => {
+  const loadSistemas = useCallback(async () => {
     setListLoading(true);
     try {
-      const [clientesRes, sistemasRes] = await Promise.all([
-        apiGet<Cliente[]>('/clientes'),
-        apiGet<Sistema[]>('/sistemas'),
-      ]);
-      setClientes(clientesRes);
-      setSistemas(sistemasRes);
+      const data = await apiGet<Sistema[]>('/sistemas');
+      setSistemas(data);
     } catch (err: any) {
-      toast({ title: 'Erro ao carregar registros', description: err.message, status: 'error' });
+      toast({ title: 'Erro ao carregar sistemas', description: err.message, status: 'error' });
     } finally {
       setListLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    if (!delDisc.isOpen) return;
-    loadEntities();
-  }, [delDisc.isOpen, loadEntities]);
+    loadSistemas();
+  }, [loadSistemas]);
 
   useEffect(() => {
-    if (!editDisc.isOpen) return;
-    loadEntities();
-  }, [editDisc.isOpen, loadEntities]);
+    if (!delDisc.isOpen && !editDisc.isOpen) return;
+    loadSistemas();
+  }, [delDisc.isOpen, editDisc.isOpen, loadSistemas]);
 
   useEffect(() => {
-    const list = deleteType === 'cliente' ? clientes : sistemas;
     setDeleteTarget((prev) => {
-      if (prev && list.some((item) => item._id === prev)) {
+      if (prev && sistemas.some((item) => item._id === prev)) {
         return prev;
       }
-      return list[0]?._id ?? '';
+      return sistemas[0]?._id ?? '';
     });
-  }, [deleteType, clientes, sistemas]);
-
-  useEffect(() => {
-    const list = editType === 'cliente' ? clientes : sistemas;
     setEditTarget((prev) => {
-      if (prev && list.some((item) => item._id === prev)) {
+      if (prev && sistemas.some((item) => item._id === prev)) {
         return prev;
       }
-      return list[0]?._id ?? '';
+      return sistemas[0]?._id ?? '';
     });
-  }, [editType, clientes, sistemas]);
+  }, [sistemas]);
 
   const handleOpenDelete = () => {
-    setDeleteType('cliente');
-    setDeleteTarget('');
     delDisc.onOpen();
   };
 
   const handleOpenEdit = () => {
-    setEditType('cliente');
-    setEditTarget('');
     editDisc.onOpen();
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) {
-      toast({ title: 'Selecione um registro para excluir', status: 'warning' });
+      toast({ title: 'Selecione um sistema para excluir', status: 'warning' });
       return;
     }
     setDeleteLoading(true);
     try {
-      const endpoint = deleteType === 'cliente' ? `/clientes/${deleteTarget}` : `/sistemas/${deleteTarget}`;
-      await apiDelete(endpoint);
-      toast({ title: `${deleteType === 'cliente' ? 'Cliente' : 'Sistema'} excluído!`, status: 'success', duration: 3000 });
-      await loadEntities();
+      const alvo = sistemas.find((sistema) => sistema._id === deleteTarget);
+      await apiDelete(`/sistemas/${deleteTarget}`);
+      historyStore.add({
+        user: currentUser,
+        action: 'exclusao',
+        entity: alvo?.nome ?? deleteTarget,
+        category: 'sistema',
+      });
+      toast({ title: 'Sistema excluído!', status: 'success', duration: 3000 });
+      await loadSistemas();
       delDisc.onClose();
     } catch (err: any) {
       toast({ title: 'Erro ao excluir', description: err.message, status: 'error' });
@@ -193,29 +165,6 @@ export default function Dados() {
       setDeleteLoading(false);
     }
   };
-
-  async function handleAddCliente(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const fd = new FormData(e.currentTarget);
-      const payload = buildClientePayload(fd);
-      await apiPost('/clientes', payload);
-      historyStore.add({
-        user: currentUser,
-        action: 'insercao',
-        entity: payload.nome,
-        category: 'cliente',
-      });
-      toast({ title: 'Cliente adicionado!', status: 'success', duration: 3000 });
-      addDisc.onClose();
-      (e.target as HTMLFormElement).reset();
-    } catch (err: any) {
-      toast({ title: 'Erro ao adicionar', description: err.message, status: 'error', duration: 5000 });
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleAddSistema(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -233,40 +182,13 @@ export default function Dados() {
       toast({ title: 'Sistema adicionado!', status: 'success', duration: 3000 });
       addSysDisc.onClose();
       (e.target as HTMLFormElement).reset();
+      await loadSistemas();
     } catch (err: any) {
       toast({ title: 'Erro ao adicionar', description: err.message, status: 'error', duration: 5000 });
     } finally {
       setLoading(false);
     }
   }
-
-  async function handleUpdateCliente(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editTarget) {
-      toast({ title: 'Selecione um cliente para editar', status: 'warning' });
-      return;
-    }
-    setEditSubmitLoading(true);
-    try {
-      const fd = new FormData(e.currentTarget);
-      const payload = buildClientePayload(fd);
-      await apiPut(`/clientes/${editTarget}`, payload);
-      historyStore.add({
-        user: currentUser,
-        action: 'atualizacao',
-        entity: payload.nome,
-        category: 'cliente',
-      });
-      toast({ title: 'Cliente atualizado!', status: 'success', duration: 3000 });
-      await loadEntities();
-      editDisc.onClose();
-    } catch (err: any) {
-      toast({ title: 'Erro ao atualizar', description: err.message, status: 'error', duration: 5000 });
-    } finally {
-      setEditSubmitLoading(false);
-    }
-  }
-
   async function handleUpdateSistema(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!editTarget) {
@@ -285,7 +207,7 @@ export default function Dados() {
         category: 'sistema',
       });
       toast({ title: 'Sistema atualizado!', status: 'success', duration: 3000 });
-      await loadEntities();
+      await loadSistemas();
       editDisc.onClose();
     } catch (err: any) {
       toast({ title: 'Erro ao atualizar', description: err.message, status: 'error', duration: 5000 });
@@ -294,47 +216,43 @@ export default function Dados() {
     }
   }
 
-  const currentDeleteList = deleteType === 'cliente' ? clientes : sistemas;
-  const currentEditList = editType === 'cliente' ? clientes : sistemas;
-  const selectedCliente = editType === 'cliente' ? clientes.find((cliente) => cliente._id === editTarget) : undefined;
-  const selectedSistema = editType === 'sistema' ? sistemas.find((sistema) => sistema._id === editTarget) : undefined;
+  const selectedSistema = sistemas.find((sistema) => sistema._id === editTarget);
 
   return (
-    <Box p={4}>
-      <Text fontSize="2xl" mb={2} fontWeight="semibold">Dados</Text>
-      <Text color="gray.400" mb={4}>Adicione clientes e sistemas ao banco de dados.</Text>
-
-      <Box display="flex" gap={3} flexWrap="wrap">
-        <Button leftIcon={<AddIcon />} colorScheme="blue" onClick={addDisc.onOpen}>
-          Adicionar cliente
-        </Button>
-        <Button leftIcon={<AddIcon />} variant="outline" onClick={addSysDisc.onOpen}>
-          Adicionar sistema
-        </Button>
-        <Button leftIcon={<EditIcon />} variant="outline" onClick={handleOpenEdit}>
-          Editar
-        </Button>
-        <Button leftIcon={<DeleteIcon />} colorScheme="red" variant="outline" onClick={handleOpenDelete}>
-          Excluir
-        </Button>
+    <Stack spacing={8}>
+      <Box>
+        <Text fontSize="xs" textTransform="uppercase" color="brand.200" letterSpacing="widest">
+          Administração de registros
+        </Text>
+        <Text fontSize="3xl" fontWeight="extrabold">Inventário oficial dos sistemas</Text>
+        <Text color="whiteAlpha.600" maxW="3xl">
+          Centralize cadastros técnicos e mantenha a rastreabilidade das usinas do programa LABER em um só lugar.
+        </Text>
       </Box>
 
-      {/* Modal Adicionar Cliente */}
-      <Modal isOpen={addDisc.isOpen} onClose={addDisc.onClose} isCentered size="3xl">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Adicionar cliente</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <ClienteForm onSubmit={handleAddCliente} loading={loading} />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      <Box>
+        <ChartPlaceholder title="Geração diária simulada" />
+      </Box>
+
+      <Box bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="whiteAlpha.100" p={5}>
+        <Flex gap={3} flexWrap="wrap" align="center">
+          <Button leftIcon={<AddIcon />} onClick={addSysDisc.onOpen}>
+            Adicionar sistema
+          </Button>
+          <Button leftIcon={<EditIcon />} variant="outline" onClick={handleOpenEdit}>
+            Editar sistema
+          </Button>
+          <Button leftIcon={<DeleteIcon />} colorScheme="red" variant="outline" onClick={handleOpenDelete}>
+            Excluir sistema
+          </Button>
+          <Tag colorScheme="teal" variant="subtle">Inventário técnico</Tag>
+        </Flex>
+      </Box>
 
       {/* Modal Adicionar Sistema */}
       <Modal isOpen={addSysDisc.isOpen} onClose={addSysDisc.onClose} isCentered size="5xl">
         <ModalOverlay />
-        <ModalContent>
+        <ModalContent bg="slate.900" borderWidth="1px" borderColor="whiteAlpha.100">
           <ModalHeader>Adicionar sistema</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
@@ -346,61 +264,36 @@ export default function Dados() {
       {/* Modal Editar */}
       <Modal isOpen={editDisc.isOpen} onClose={editDisc.onClose} isCentered size="5xl">
         <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Editar registro</ModalHeader>
+        <ModalContent bg="slate.900" borderWidth="1px" borderColor="whiteAlpha.100">
+          <ModalHeader>Editar sistema</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             <Stack spacing={4} mb={4}>
-              <FormControl>
-                <FormLabel>Tipo de registro</FormLabel>
-                <Select value={editType} onChange={(e) => setEditType(e.target.value as 'cliente' | 'sistema')}>
-                  <option value="cliente">Cliente</option>
-                  <option value="sistema">Sistema</option>
-                </Select>
-              </FormControl>
               {listLoading ? (
                 <Flex align="center" justify="center" py={4}>
                   <Spinner size="sm" mr={2} />
-                  <Text>Carregando registros...</Text>
+                  <Text>Carregando sistemas...</Text>
                 </Flex>
               ) : (
-                <FormControl isDisabled={currentEditList.length === 0}>
-                  <FormLabel>{editType === 'cliente' ? 'Selecione o cliente' : 'Selecione o sistema'}</FormLabel>
-                  {currentEditList.length === 0 ? (
+                <FormControl isDisabled={sistemas.length === 0}>
+                  <FormLabel>Selecione o sistema</FormLabel>
+                  {sistemas.length === 0 ? (
                     <Text color="gray.400" fontSize="sm">
-                      Nenhum {editType === 'cliente' ? 'cliente' : 'sistema'} cadastrado.
+                      Nenhum sistema cadastrado.
                     </Text>
                   ) : (
                     <Select value={editTarget} onChange={(e) => setEditTarget(e.target.value)}>
-                      {editType === 'cliente'
-                        ? clientes.map((cliente) => (
-                            <option key={cliente._id} value={cliente._id}>
-                              {cliente.nome} — {cliente.cpf_cnpj}
-                            </option>
-                          ))
-                        : sistemas.map((sistema) => (
-                            <option key={sistema._id} value={sistema._id}>
-                              {sistema.nome} — Cliente {sistema.id_cliente}
-                            </option>
-                          ))}
+                      {sistemas.map((sistema) => (
+                        <option key={sistema._id} value={sistema._id}>
+                          {sistema.nome}
+                        </option>
+                      ))}
                     </Select>
                   )}
                 </FormControl>
               )}
             </Stack>
-            {editType === 'cliente' ? (
-              selectedCliente ? (
-                <ClienteForm
-                  key={`edit-cliente-${selectedCliente._id}`}
-                  onSubmit={handleUpdateCliente}
-                  loading={editSubmitLoading}
-                  initialValues={selectedCliente}
-                  submitLabel="Salvar alterações"
-                />
-              ) : (
-                <Text color="gray.400">Selecione um cliente para editar.</Text>
-              )
-            ) : selectedSistema ? (
+            {selectedSistema ? (
               <SistemaForm
                 key={`edit-sistema-${selectedSistema._id}`}
                 onSubmit={handleUpdateSistema}
@@ -409,7 +302,7 @@ export default function Dados() {
                 submitLabel="Salvar alterações"
               />
             ) : (
-              <Text color="gray.400">Selecione um sistema para editar.</Text>
+              <Text color="gray.400">Nenhum sistema disponível para edição.</Text>
             )}
           </ModalBody>
           <ModalFooter>
@@ -421,43 +314,30 @@ export default function Dados() {
       {/* Modal Excluir */}
       <Modal isOpen={delDisc.isOpen} onClose={delDisc.onClose} isCentered>
         <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Excluir registro</ModalHeader>
+        <ModalContent bg="slate.900" borderWidth="1px" borderColor="whiteAlpha.100">
+          <ModalHeader>Excluir sistema</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             <Stack spacing={4}>
-              <FormControl>
-                <FormLabel>Tipo de registro</FormLabel>
-                <Select value={deleteType} onChange={(e) => setDeleteType(e.target.value as 'cliente' | 'sistema')}>
-                  <option value="cliente">Cliente</option>
-                  <option value="sistema">Sistema</option>
-                </Select>
-              </FormControl>
               {listLoading ? (
                 <Flex align="center" justify="center" py={6}>
                   <Spinner size="sm" mr={2} />
-                  <Text>Carregando registros...</Text>
+                  <Text>Carregando sistemas...</Text>
                 </Flex>
               ) : (
-                <FormControl isDisabled={currentDeleteList.length === 0}>
-                  <FormLabel>{deleteType === 'cliente' ? 'Selecione o cliente' : 'Selecione o sistema'}</FormLabel>
-                  {currentDeleteList.length === 0 ? (
+                <FormControl isDisabled={sistemas.length === 0}>
+                  <FormLabel>Selecione o sistema</FormLabel>
+                  {sistemas.length === 0 ? (
                     <Text color="gray.400" fontSize="sm">
-                      Nenhum {deleteType === 'cliente' ? 'cliente' : 'sistema'} cadastrado.
+                      Nenhum sistema cadastrado.
                     </Text>
                   ) : (
                     <Select value={deleteTarget} onChange={(e) => setDeleteTarget(e.target.value)}>
-                      {deleteType === 'cliente'
-                        ? clientes.map((cliente) => (
-                            <option key={cliente._id} value={cliente._id}>
-                              {cliente.nome} — {cliente.cpf_cnpj}
-                            </option>
-                          ))
-                        : sistemas.map((sistema) => (
-                            <option key={sistema._id} value={sistema._id}>
-                              {sistema.nome} — Cliente {sistema.id_cliente}
-                            </option>
-                          ))}
+                      {sistemas.map((sistema) => (
+                        <option key={sistema._id} value={sistema._id}>
+                          {sistema.nome}
+                        </option>
+                      ))}
                     </Select>
                   )}
                 </FormControl>
@@ -473,86 +353,10 @@ export default function Dados() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </Box>
+    </Stack>
   );
 }
 
-type ClienteFormProps = {
-  onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
-  loading: boolean;
-  initialValues?: Partial<Cliente>;
-  submitLabel?: string;
-};
-
-function ClienteForm({ onSubmit, loading, initialValues, submitLabel = 'Salvar cliente' }: ClienteFormProps) {
-  const endereco = initialValues?.endereco;
-
-  return (
-    <Box as="form" onSubmit={onSubmit}>
-      <Text fontWeight="semibold" mb={3}>Cliente</Text>
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
-        <FormControl isRequired>
-          <FormLabel>Nome</FormLabel>
-          <Input name="nome" placeholder="João da Silva" defaultValue={initialValues?.nome ?? ''} />
-        </FormControl>
-        <FormControl isRequired>
-          <FormLabel>CPF/CNPJ</FormLabel>
-          <Input name="cpf_cnpj" placeholder="123.456.789-00" defaultValue={initialValues?.cpf_cnpj ?? ''} />
-        </FormControl>
-        <FormControl isRequired>
-          <FormLabel>Tipo de pessoa</FormLabel>
-          <Select name="tipo_pessoa" defaultValue={initialValues?.tipo_pessoa ?? 'F'}>
-            <option value="F">Física</option>
-            <option value="J">Jurídica</option>
-          </Select>
-        </FormControl>
-        <FormControl>
-          <FormLabel>Data de nascimento</FormLabel>
-          <Input name="data_nasc" type="date" defaultValue={formatDateInput(initialValues?.data_nasc)} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Telefone</FormLabel>
-          <Input name="telefone" placeholder="+5593991234567" defaultValue={initialValues?.telefone ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Email</FormLabel>
-          <Input name="email" type="email" placeholder="email@dominio.com" defaultValue={initialValues?.email ?? ''} />
-        </FormControl>
-      </Grid>
-
-      <Divider my={6} />
-      <Text fontWeight="semibold" mb={3}>Endereço</Text>
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
-        <FormControl gridColumn={{ md: 'span 2' }}>
-          <FormLabel>Rua</FormLabel>
-          <Input name="endereco.rua" placeholder="Rua das Flores, 123" defaultValue={endereco?.rua ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Bairro</FormLabel>
-          <Input name="endereco.bairro" placeholder="Centro" defaultValue={endereco?.bairro ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Complemento</FormLabel>
-          <Input name="endereco.complemento" placeholder="Apto 101" defaultValue={endereco?.complemento ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>CEP</FormLabel>
-          <Input name="endereco.cep" placeholder="68000-000" defaultValue={endereco?.cep ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Cidade</FormLabel>
-          <Input name="endereco.cidade" placeholder="Santarém" defaultValue={endereco?.cidade ?? ''} />
-        </FormControl>
-        <FormControl>
-          <FormLabel>Estado</FormLabel>
-          <Input name="endereco.estado" placeholder="PA" defaultValue={endereco?.estado ?? ''} />
-        </FormControl>
-      </Grid>
-      <Divider my={6} />
-      <Button type="submit" colorScheme="blue" isLoading={loading} w="full">{submitLabel}</Button>
-    </Box>
-  );
-}
 
 type SistemaFormProps = {
   onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
@@ -570,22 +374,25 @@ function SistemaForm({ onSubmit, loading, initialValues, submitLabel = 'Salvar s
   const controladores = subs?.componentes?.controladores?.[0];
 
   return (
-    <Box as="form" onSubmit={onSubmit}>
+    <Box
+      as="form"
+      onSubmit={onSubmit}
+      bg="slate.800"
+      borderRadius="xl"
+      borderWidth="1px"
+      borderColor="whiteAlpha.100"
+      p={4}
+      boxShadow="lg"
+    >
       <Text fontWeight="semibold" mb={3}>Sistema</Text>
 
       {/* Identificação */}
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
-        <FormControl>
-          <FormLabel>ID do Cliente (ObjectId)</FormLabel>
-          <Input name="id_cliente" placeholder="cliente_183" defaultValue={initialValues?.id_cliente ?? ''} />
-        </FormControl>
-        <FormControl gridColumn={{ md: 'span 2' }}>
-          <FormLabel>Nome do sistema</FormLabel>
-          <Input name="nome" placeholder="Casa Sede" defaultValue={initialValues?.nome ?? ''} />
-        </FormControl>
-      </Grid>
+      <FormControl mb={4}>
+        <FormLabel>Nome do sistema</FormLabel>
+        <Input name="nome" placeholder="Casa Sede" defaultValue={initialValues?.nome ?? ''} />
+      </FormControl>
 
-      <Divider my={6} />
+      <Divider my={6} borderColor="whiteAlpha.200" />
       <Text fontWeight="semibold" mb={3}>Localização</Text>
       <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
         <FormControl>
@@ -614,7 +421,7 @@ function SistemaForm({ onSubmit, loading, initialValues, submitLabel = 'Salvar s
         </FormControl>
       </Grid>
 
-      <Divider my={6} />
+      <Divider my={6} borderColor="whiteAlpha.200" />
       <Text fontWeight="semibold" mb={3}>Subsistema (1º item)</Text>
       <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
         <FormControl>
@@ -713,8 +520,8 @@ function SistemaForm({ onSubmit, loading, initialValues, submitLabel = 'Salvar s
           </Box>
         </Grid>
       </Stack>
-      <Divider my={6} />
-      <Button type="submit" colorScheme="blue" isLoading={loading} w="full">{submitLabel}</Button>
+      <Divider my={6} borderColor="whiteAlpha.200" />
+      <Button type="submit" colorScheme="teal" isLoading={loading} w="full">{submitLabel}</Button>
     </Box>
   );
 }

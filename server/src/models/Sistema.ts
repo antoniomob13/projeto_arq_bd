@@ -1,4 +1,4 @@
-import { Schema, model, Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 const LocalizacaoSchema = new Schema(
   {
@@ -62,10 +62,11 @@ const SubsistemaSchema = new Schema(
 
 const SistemaSchema = new Schema(
   {
-    id_cliente: { type: Schema.Types.ObjectId as unknown as Types.ObjectId, ref: 'Cliente', required: true },
     nome: { type: String, required: true },
     localizacao: LocalizacaoSchema,
-    subsistema: [SubsistemaSchema]
+    subsistema: [SubsistemaSchema],
+    status_operacional: { type: String, default: 'Online' },
+    prioridade_teste: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

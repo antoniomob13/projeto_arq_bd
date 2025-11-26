@@ -7,10 +7,11 @@ export type ISODateString = string;  // e.g., "2025-11-04T16:10:00Z"
 // Sistema
 export interface Sistema {
   _id: ObjectIdString;
-  id_cliente: ObjectIdString;
   nome: string;
   localizacao: Localizacao;
   subsistema: Subsistema[];
+  status_operacional?: string;
+  prioridade_teste?: boolean;
 }
 
 export interface Localizacao {
@@ -49,11 +50,6 @@ export interface Painel {
   quantidade: number;
 }
 
-export interface Inversor {
-  marca: string;
-  modelo: string;
-}
-
 export interface Controlador {
   marca: string;
   modelo: string;
@@ -88,26 +84,4 @@ export interface PainelEstado {
   tensao_V: number;
   corrente_A: number;
   potencia_W: number;
-}
-
-// Cliente
-export interface Cliente {
-  _id: ObjectIdString;
-  nome: string;
-  cpf_cnpj: string;
-  tipo_pessoa: 'F' | 'J';
-  data_nasc: ISODateString;
-  telefone: string;
-  email: string;
-  endereco: Endereco;
-  sistemas: Array<{ id_sistema: ObjectIdString }>; // references to Sistemas
-}
-
-export interface Endereco {
-  rua: string;
-  bairro: string;
-  complemento?: string;
-  cep: string;
-  cidade: string;
-  estado: string;
 }

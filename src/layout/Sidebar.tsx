@@ -1,46 +1,149 @@
-import { Box, Flex, Icon, Link as ChakraLink, Text, VStack } from '@chakra-ui/react';
+import { Box, Flex, Icon, Link as ChakraLink, Stack, Text } from '@chakra-ui/react';
 import { Link, useLocation } from 'react-router-dom';
-import { ViewIcon } from '@chakra-ui/icons';
-import { MdDataUsage, MdHistory } from 'react-icons/md';
+import { FiGrid, FiSettings, FiUsers, FiHome, FiLogOut, FiBarChart2, FiBox } from 'react-icons/fi';
+import { PiCubeFill } from 'react-icons/pi';
+import { useMemo, type ComponentType } from 'react';
+import { useAuth } from '../context/AuthContext';
 
-const items = [
-  { to: '/visualizacao', label: 'Visualização', icon: ViewIcon },
-  { to: '/dados', label: 'Dados', icon: MdDataUsage },
-  { to: '/historico', label: 'Histórico', icon: MdHistory },
-];
+type NavItem = {
+  to: string;
+  label: string;
+  icon: ComponentType;
+};
 
 export default function Sidebar() {
   const { pathname } = useLocation();
+  const { logout, isAdmin } = useAuth();
+
+  const navItems = useMemo<NavItem[]>(() => {
+    if (isAdmin) {
+      return [
+        { to: '/dashboard', label: 'Dashboard Geral', icon: FiHome },
+        { to: '/sistemas', label: 'Gestão de Sistemas', icon: FiSettings },
+        { to: '/clientes', label: 'Gestão de Clientes', icon: FiUsers },
+      ];
+    }
+    // Cliente
+    return [
+      { to: '/dashboard', label: 'Dashboard Visão Geral', icon: FiGrid },
+      { to: '/equipamentos', label: 'Inventário e Subsistemas', icon: FiBox },
+      { to: '/analises', label: 'Gráficos & Análises', icon: FiBarChart2 },
+    ];
+  }, [isAdmin]);
+
   return (
-    <Box as="nav" w={{ base: '64', md: '64' }} bg="gray.800" borderRightWidth="1px" borderColor="gray.700" p={4}>
-      <VStack align="stretch" spacing={1}>
-        {items.map((it) => {
-          const active = pathname === it.to;
+    <Box
+      as="nav"
+      bg="slate.800"
+      borderRightWidth="1px"
+      borderColor="rgba(51,65,85,0.5)"
+      w="64"
+      display={{ base: 'none', md: 'flex' }}
+      flexDirection="column"
+      boxShadow="2xl"
+      zIndex={20}
+    >
+      {/* Header com Logo */}
+      <Flex
+        align="center"
+        justify="center"
+        gap={3}
+        h="16"
+        borderBottomWidth="1px"
+        borderColor="slate.700"
+        bg="rgba(15,23,42,0.5)"
+      >
+        <Icon as={PiCubeFill} boxSize={7} color="brand.400" />
+        <Text fontSize="2xl" fontWeight="extrabold" letterSpacing="widest" color="gray.100">
+          LABER
+        </Text>
+      </Flex>
+
+      {/* Menu de Navegação */}
+      <Stack as="nav" flex="1" py={4} spacing={2} overflowY="auto">
+        {isAdmin && (
+          <Text
+            fontSize="xs"
+            textTransform="uppercase"
+            letterSpacing="wider"
+            fontWeight="semibold"
+            color="gray.500"
+            mt={4}
+            mb={2}
+            px={6}
+          >
+            Administração da frota
+          </Text>
+        )}
+
+        {navItems.map((item) => {
+          const active = pathname === item.to || pathname.startsWith(item.to + '/');
           return (
-            <ChakraLink
-              as={Link}
-              key={it.to}
-              to={it.to}
-              _hover={{ textDecoration: 'none' }}
-              _activeLink={{}}
-            >
+            <ChakraLink key={item.to} as={Link} to={item.to} _hover={{ textDecoration: 'none' }}>
               <Flex
                 align="center"
                 gap={3}
-                px={3}
-                py={2}
-                borderRadius="md"
-                bg={active ? 'gray.700' : 'transparent'}
-                color={active ? 'blue.400' : 'gray.200'}
-                _hover={{ bg: 'gray.700' }}
+                px={6}
+                py={3.5}
+                borderLeftWidth="4px"
+                borderColor={active ? 'brand.400' : 'transparent'}
+                bg={active ? 'rgba(51,65,85,0.7)' : 'transparent'}
+                color={active ? 'white' : 'gray.300'}
+                borderRightRadius="full"
+                transition="all 0.2s"
+                _hover={{
+                  bg: 'rgba(51,65,85,0.7)',
+                  borderColor: 'brand.400',
+                  color: 'white',
+                }}
               >
-                <Icon as={it.icon} />
-                <Text fontWeight={active ? 'semibold' : 'normal'}>{it.label}</Text>
+                <Icon as={item.icon} boxSize={5} />
+                <Text fontWeight="medium">{item.label}</Text>
               </Flex>
             </ChakraLink>
           );
         })}
-      </VStack>
+
+        {/* Botão Sair */}
+        <ChakraLink
+          onClick={logout}
+          _hover={{ textDecoration: 'none' }}
+          mt={12}
+        >
+          <Flex
+            align="center"
+            gap={3}
+            px={6}
+            py={3.5}
+            borderLeftWidth="4px"
+            borderColor="transparent"
+            color="red.300"
+            borderRightRadius="full"
+            transition="all 0.2s"
+            _hover={{
+              bg: 'rgba(127,29,29,0.5)',
+              borderColor: 'red.500',
+            }}
+          >
+            <Icon as={FiLogOut} boxSize={5} />
+            <Text fontWeight="medium">Sair</Text>
+          </Flex>
+        </ChakraLink>
+      </Stack>
+
+      {/* Footer */}
+      <Box
+        px={4}
+        py={4}
+        borderTopWidth="1px"
+        borderColor="slate.700"
+        bg="rgba(2,6,23,0.5)"
+        textAlign="center"
+      >
+        <Text fontSize="xs" color="gray.500">
+          © 2025 UFOPA | Energy Tech
+        </Text>
+      </Box>
     </Box>
   );
 }

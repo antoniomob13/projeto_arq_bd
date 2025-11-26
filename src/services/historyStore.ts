@@ -4,7 +4,7 @@ export type HistoryEntry = {
   user: string; // quem inseriu
   action: 'insercao' | string;
   entity?: string; // nome/identificador opcional
-  category?: 'cliente' | 'sistema' | 'outro';
+  category?: 'sistema' | 'outro';
 };
 
 const KEY = 'history.entries.v1';
