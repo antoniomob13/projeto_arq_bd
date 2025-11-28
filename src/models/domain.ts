@@ -98,6 +98,7 @@ export interface Leitura {
   frequencia_Hz: number;
   temperatura: number;
   geracao: Geracao;
+  consumo?: Consumo;
   bateria: BateriaEstado;
   painel: PainelEstado;
   id_subsistema: ObjectIdString;
@@ -107,18 +108,28 @@ export interface Geracao {
   potencia_W: number;
   tensao_V: number;
   corrente_A: number;
+  energia_kWh?: number;
+}
+
+export interface Consumo {
+  potencia_W: number;
+  tensao_V: number;
+  corrente_A: number;
+  energia_kWh?: number;
 }
 
 export interface BateriaEstado {
   soc_percent: number;
   tensao_V: number;
   corrente_A: number;
+  temperatura?: number;
 }
 
 export interface PainelEstado {
   tensao_V: number;
   corrente_A: number;
   potencia_W: number;
+  temperatura?: number;
 }
 
 // Leitura atual para exibição em tempo real

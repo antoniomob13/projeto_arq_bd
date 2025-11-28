@@ -13,6 +13,20 @@ r.get('/', async (_req, res) => {
   }
 });
 
+// Buscar sistema por ID
+r.get('/:id', async (req, res) => {
+  try {
+    const sistema = await Sistema.findById(req.params.id).lean();
+    if (!sistema) {
+      return res.status(404).json({ error: 'Sistema não encontrado' });
+    }
+    res.json(sistema);
+  } catch (err: any) {
+    console.error('GET /sistemas/:id error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 r.post('/', async (req, res) => {
   try {
     const created = await Sistema.create(req.body);

@@ -10,6 +10,13 @@ import {
   Input,
   InputGroup,
   InputLeftElement,
+  InputRightElement,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   SimpleGrid,
   Spinner,
   Stack,
@@ -22,7 +29,9 @@ import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FaPenToSquare,
-  FaArrowUpRightFromSquare,
+  FaChartLine,
+  FaGauge,
+  FaMicrochip,
   FaMapPin,
   FaPlus,
   FaMagnifyingGlass,
@@ -30,12 +39,16 @@ import {
   FaTrashCan,
   FaUserTag,
   FaPlugCircleBolt,
+  FaTriangleExclamation,
+  FaEye,
+  FaEyeSlash,
 } from 'react-icons/fa6';
 import { useNavigate } from 'react-router-dom';
 import { getSistemas, createSistema, updateSistema, deleteSistema, calcularCapacidadeTotal } from '../api/sistemas';
-import { getClientes } from '../api/clientes';
+import { getClientes, loginCliente } from '../api/clientes';
 import type { Sistema, Cliente } from '../models/domain';
 import SistemaFormModal, { type SistemaFormData, type Localizacao, type Subsistema, type Painel } from '../components/SistemaFormModal';
+import { useAuth } from '../context/AuthContext';
 
 type NormalizedStatus = 'online' | 'offline' | 'alert';
 
@@ -93,8 +106,15 @@ export default function Instances() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingSystem, setEditingSystem] = useState<SistemaDisplay | null>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const deleteModal = useDisclosure();
+  const [systemToDelete, setSystemToDelete] = useState<SistemaDisplay | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
 
   // Carrega dados da API
   useEffect(() => {
@@ -108,13 +128,23 @@ export default function Instances() {
         ]);
         
         if (active) {
-          // Mapeia clientes para lookup rápido
-          const clienteMap = new Map(clientesData.map((c: Cliente) => [c._id, c.nome]));
+          // Mapeia sistemas para seus clientes (cliente.sistema_id -> cliente.nome)
+          const sistemaToClienteMap = new Map<string, string>();
+          for (const cliente of clientesData) {
+            if (cliente.sistema_id) {
+              const sistemaId = typeof cliente.sistema_id === 'string' 
+                ? cliente.sistema_id 
+                : (cliente.sistema_id as any)?._id;
+              if (sistemaId) {
+                sistemaToClienteMap.set(sistemaId, cliente.nome);
+              }
+            }
+          }
           
           // Converte sistemas para display
           const sistemasDisplay: SistemaDisplay[] = sistemasData.map((s: Sistema) => ({
             ...s,
-            cliente_nome: s.id_cliente ? clienteMap.get(s.id_cliente) ?? 'Desconhecido' : 'Sem cliente',
+            cliente_nome: sistemaToClienteMap.get(s._id) ?? 'Sem cliente',
             status_operacional: normalizeStatus((s as Sistema & { status_operacional?: string }).status_operacional),
             capacidade_total_Wp: calcularCapacidadeTotal([s]),
           }));
@@ -237,26 +267,56 @@ export default function Instances() {
     }
   };
 
-  const handleRemove = async (sistema: SistemaDisplay) => {
+  const handleRemove = (sistema: SistemaDisplay) => {
     if (!sistema._id) return;
+    setSystemToDelete(sistema);
+    setDeletePassword('');
+    setDeleteError('');
+    deleteModal.onOpen();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!systemToDelete?._id || !user?.email) return;
+    
+    setIsDeleting(true);
+    setDeleteError('');
     
     try {
-      await deleteSistema(sistema._id);
-      setSistemas((prev) => prev.filter((s) => s._id !== sistema._id));
+      // Verifica a senha fazendo login
+      await loginCliente({ email: user.email, senha: deletePassword });
+      
+      // Se chegou aqui, a senha está correta - pode excluir
+      await deleteSistema(systemToDelete._id);
+      setSistemas((prev) => prev.filter((s) => s._id !== systemToDelete._id));
+      
       toast({
         title: 'Sistema removido',
-        description: `${sistema.nome} foi removido com sucesso.`,
+        description: `${systemToDelete.nome} foi removido com sucesso.`,
         status: 'success',
         duration: 3000,
       });
-    } catch (err) {
-      toast({
-        title: 'Erro ao remover',
-        description: 'Não foi possível remover o sistema.',
-        status: 'error',
-        duration: 5000,
-      });
+      
+      deleteModal.onClose();
+      setSystemToDelete(null);
+      setDeletePassword('');
+    } catch (err: any) {
+      if (err?.response?.status === 401 || err?.message?.includes('401')) {
+        setDeleteError('Senha incorreta. Tente novamente.');
+      } else if (err?.response?.data?.error) {
+        setDeleteError(err.response.data.error);
+      } else {
+        setDeleteError('Erro ao verificar credenciais. Tente novamente.');
+      }
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const handleCancelDelete = () => {
+    deleteModal.onClose();
+    setSystemToDelete(null);
+    setDeletePassword('');
+    setDeleteError('');
   };
 
   if (loading) {
@@ -374,17 +434,125 @@ export default function Instances() {
               key={sistema._id}
               sistema={sistema}
               onView={() => navigate(`/analises?sistema=${sistema._id}`)}
+              onViewDetails={() => navigate(`/dashboard?sistema=${sistema._id}`)}
+              onViewEquipment={() => navigate(`/equipamentos?sistema=${sistema._id}`)}
               onEdit={() => handleOpenEdit(sistema)}
               onRemove={() => handleRemove(sistema)}
             />
           ))}
         </SimpleGrid>
       )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      <Modal isOpen={deleteModal.isOpen} onClose={handleCancelDelete} isCentered>
+        <ModalOverlay bg="blackAlpha.700" backdropFilter="blur(4px)" />
+        <ModalContent bg="slate.800" borderRadius="2xl" borderWidth="1px" borderColor="red.500/30" mx={4}>
+          <ModalHeader pb={2}>
+            <Flex align="center" gap={3}>
+              <Box p={2} bg="red.500/20" borderRadius="lg">
+                <Icon as={FaTriangleExclamation} color="red.400" boxSize={5} />
+              </Box>
+              <Box>
+                <Text fontSize="lg" fontWeight="bold" color="gray.100">
+                  Confirmar Exclusão
+                </Text>
+                <Text fontSize="sm" color="gray.400" fontWeight="normal">
+                  Esta ação não pode ser desfeita
+                </Text>
+              </Box>
+            </Flex>
+          </ModalHeader>
+          
+          <ModalBody py={4}>
+            <Stack spacing={4}>
+              <Box bg="red.900/30" borderRadius="xl" p={4} borderWidth="1px" borderColor="red.500/20">
+                <Text color="gray.300" fontSize="sm">
+                  Você está prestes a excluir permanentemente o sistema:
+                </Text>
+                <Text color="white" fontWeight="bold" fontSize="lg" mt={1}>
+                  {systemToDelete?.nome}
+                </Text>
+                <Text color="gray.400" fontSize="sm" mt={1}>
+                  {systemToDelete?.cliente_nome && systemToDelete.cliente_nome !== 'Sem cliente' && (
+                    <>Cliente: {systemToDelete.cliente_nome}</>
+                  )}
+                </Text>
+              </Box>
+              
+              <Box>
+                <Text color="gray.300" fontSize="sm" mb={2}>
+                  Para confirmar, digite sua senha:
+                </Text>
+                <InputGroup>
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Digite sua senha"
+                    value={deletePassword}
+                    onChange={(e) => {
+                      setDeletePassword(e.target.value);
+                      setDeleteError('');
+                    }}
+                    bg="slate.700"
+                    borderColor={deleteError ? 'red.500' : 'whiteAlpha.200'}
+                    _hover={{ borderColor: deleteError ? 'red.400' : 'whiteAlpha.300' }}
+                    _focus={{ borderColor: deleteError ? 'red.400' : 'red.500', boxShadow: deleteError ? '0 0 0 1px var(--chakra-colors-red-500)' : '0 0 0 1px var(--chakra-colors-red-500)' }}
+                    borderRadius="xl"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && deletePassword) {
+                        handleConfirmDelete();
+                      }
+                    }}
+                  />
+                  <InputRightElement>
+                    <IconButton
+                      aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                      icon={showPassword ? <FaEyeSlash /> : <FaEye />}
+                      variant="ghost"
+                      size="sm"
+                      color="gray.400"
+                      _hover={{ color: 'gray.200' }}
+                      onClick={() => setShowPassword(!showPassword)}
+                    />
+                  </InputRightElement>
+                </InputGroup>
+                {deleteError && (
+                  <Text color="red.400" fontSize="sm" mt={2}>
+                    {deleteError}
+                  </Text>
+                )}
+              </Box>
+            </Stack>
+          </ModalBody>
+          
+          <ModalFooter gap={3} pt={2}>
+            <Button
+              variant="ghost"
+              onClick={handleCancelDelete}
+              color="gray.400"
+              _hover={{ bg: 'slate.700', color: 'gray.200' }}
+              borderRadius="xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              colorScheme="red"
+              onClick={handleConfirmDelete}
+              isLoading={isDeleting}
+              loadingText="Excluindo..."
+              isDisabled={!deletePassword}
+              borderRadius="xl"
+              leftIcon={<FaTrashCan />}
+            >
+              Excluir Sistema
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Stack>
   );
 }
 
-function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
+function SystemCard({ sistema, onView, onViewDetails, onViewEquipment, onEdit, onRemove }: SystemCardProps) {
   const colors = STATUS_STYLES[sistema.status_operacional];
   const location = sistema.localizacao?.rua ?? 'Localização não informada';
 
@@ -447,16 +615,40 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
 
         {/* Actions */}
         <Flex justify="flex-end" gap={2}>
-          <Tooltip label="Visualizar detalhes">
+          <Tooltip label="Ver gráficos">
             <IconButton 
-              aria-label="ver" 
-              icon={<FaArrowUpRightFromSquare />} 
+              aria-label="ver gráficos" 
+              icon={<FaChartLine />} 
               size="sm"
               variant="ghost" 
               color="blue.300" 
               bg="rgba(59,130,246,0.15)" 
               _hover={{ bg: 'rgba(59,130,246,0.25)' }} 
               onClick={onView} 
+            />
+          </Tooltip>
+          <Tooltip label="Visualizar detalhes">
+            <IconButton 
+              aria-label="visualizar detalhes" 
+              icon={<FaGauge />} 
+              size="sm"
+              variant="ghost" 
+              color="cyan.300" 
+              bg="rgba(34,211,238,0.15)" 
+              _hover={{ bg: 'rgba(34,211,238,0.25)' }} 
+              onClick={onViewDetails} 
+            />
+          </Tooltip>
+          <Tooltip label="Ver equipamentos">
+            <IconButton 
+              aria-label="ver equipamentos" 
+              icon={<FaMicrochip />} 
+              size="sm"
+              variant="ghost" 
+              color="purple.300" 
+              bg="rgba(168,85,247,0.15)" 
+              _hover={{ bg: 'rgba(168,85,247,0.25)' }} 
+              onClick={onViewEquipment} 
             />
           </Tooltip>
           <Tooltip label="Editar sistema">
@@ -492,6 +684,8 @@ function SystemCard({ sistema, onView, onEdit, onRemove }: SystemCardProps) {
 type SystemCardProps = {
   sistema: SistemaDisplay;
   onView: () => void;
+  onViewDetails: () => void;
+  onViewEquipment: () => void;
   onEdit: () => void;
   onRemove: () => void;
 };

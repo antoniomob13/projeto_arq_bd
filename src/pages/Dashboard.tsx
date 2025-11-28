@@ -25,12 +25,13 @@ import {
   FaSolarPanel,
   FaFan,
   FaListCheck,
-  FaMapPin
+  FaMapPin,
+  FaArrowLeft
 } from 'react-icons/fa6';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getSistemas, getSistemaById, calcularCapacidadeTotal } from '../api/sistemas';
 import { getUltimaLeitura } from '../api/leituras';
-import type { Sistema, LeituraAtual } from '../models/domain';
+import type { Sistema, LeituraAtual, Leitura } from '../models/domain';
 import { useAuth } from '../context/AuthContext';
 import RealtimeChart, { type Point } from '../components/RealtimeChart';
 
@@ -39,11 +40,16 @@ type NormalizedStatus = 'Online' | 'Offline' | 'Alerta/Erro';
 export default function Dashboard() {
   const { isAdmin, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sistemaIdFromUrl = searchParams.get('sistema');
   const [sistemas, setSistemas] = useState<(Sistema & { capacidade_wp?: number; status_operacional?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Se há um sistemaId específico na URL, não precisa carregar todos os sistemas
+    if (sistemaIdFromUrl) return;
+    
     let active = true;
     (async () => {
       setLoading(true);
@@ -63,7 +69,7 @@ export default function Dashboard() {
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [sistemaIdFromUrl]);
 
   const stats = useMemo(() => {
     const online = sistemas.filter(s => s.status_operacional === 'Online').length;
@@ -87,6 +93,11 @@ export default function Dashboard() {
     const healthy = sorted.filter(s => s.status_operacional === 'Online').slice(0, 2);
     return [...critical, ...healthy];
   }, [sistemas]);
+
+  // Se há um sistemaId na URL (admin visualizando sistema específico) ou se é cliente
+  if (sistemaIdFromUrl) {
+    return <ClienteDashboard sistemaId={sistemaIdFromUrl} showBackButton={isAdmin} />;
+  }
 
   if (!isAdmin) {
     return <ClienteDashboard sistemaId={user?.sistema_id} />;
@@ -306,7 +317,9 @@ function StatusBadge({ status }: { status: NormalizedStatus }) {
 }
 
 // Cliente Dashboard (renderUserHome from teste.html)
-function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
+function ClienteDashboard({ sistemaId, showBackButton = false }: { sistemaId?: string | null; showBackButton?: boolean }) {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [sistema, setSistema] = useState<Sistema | null>(null);
   const [leitura, setLeitura] = useState<LeituraAtual | null>(null);
   const [loading, setLoading] = useState(true);
@@ -320,24 +333,40 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
       
       try {
         if (sistemaId) {
-          const [sistemaData, leituraData] = await Promise.all([
-            getSistemaById(sistemaId),
+          const [sistemaData, leituraRaw] = await Promise.all([
+            getSistemaById(sistemaId).catch(() => null),
             getUltimaLeitura(sistemaId).catch(() => null)
           ]);
           
           if (active) {
+            if (!sistemaData) {
+              // Sistema não encontrado no banco - provavelmente IDs desatualizados
+              setError('Sistema não encontrado. Por favor, faça logout e login novamente.');
+              return;
+            }
+            
             setSistema(sistemaData);
-            setLeitura(leituraData);
+            // Mapear leitura do banco para LeituraAtual
+            if (leituraRaw) {
+              setLeitura({
+                geracao_w: leituraRaw.geracao?.potencia_W || 0,
+                consumo_w: leituraRaw.consumo?.potencia_W || leituraRaw.painel?.potencia_W || 0,
+                soc_bateria: leituraRaw.bateria?.soc_percent || 0,
+                status: leituraRaw.status || 'Sem dados',
+              });
+            } else {
+              setLeitura(null);
+            }
           }
         } else {
-          // Cliente sem sistema associado
+          // Cliente sem sistema associado (recém cadastrado)
           if (active) {
             setError('Nenhum sistema associado à sua conta.');
           }
         }
       } catch (err) {
         if (active) {
-          setError('Erro ao carregar dados do sistema.');
+          setError('Erro ao carregar dados do sistema. Tente fazer logout e login novamente.');
         }
       } finally {
         if (active) setLoading(false);
@@ -374,12 +403,38 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
 
   if (error || !sistema) {
     return (
-      <Box bg="slate.800" p={6} borderRadius="xl" borderWidth="1px" borderColor="slate.700">
-        <Heading size="md" color="gray.300" mb={2}>Sistema não disponível</Heading>
-        <Text color="gray.400">{error || 'Nenhum sistema associado à sua conta.'}</Text>
-        <Text color="gray.500" mt={2} fontSize="sm">
-          Entre em contato com o administrador para associar um sistema à sua conta.
+      <Box bg="slate.800" p={8} borderRadius="2xl" borderWidth="1px" borderColor="slate.700" maxW="600px" mx="auto" mt={10}>
+        <Flex align="center" gap={3} mb={4}>
+          <Icon as={FaTriangleExclamation} color="yellow.400" boxSize={6} />
+          <Heading size="md" color="gray.200">Sistema não disponível</Heading>
+        </Flex>
+        <Text color="gray.400" mb={4}>
+          {error || 'Não foi possível carregar os dados do sistema.'}
         </Text>
+        <Text color="gray.500" fontSize="sm" mb={6}>
+          Isso pode acontecer se os dados foram atualizados. Faça logout e login novamente para sincronizar.
+        </Text>
+        <Flex gap={3} wrap="wrap">
+          <Button
+            colorScheme="red"
+            variant="solid"
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            leftIcon={<Icon as={FaPowerOff} />}
+          >
+            Fazer Logout
+          </Button>
+          <Button
+            colorScheme="teal"
+            variant="outline"
+            onClick={() => navigate('/analytics')}
+            leftIcon={<Icon as={FaSolarPanel} />}
+          >
+            Ver Gráficos
+          </Button>
+        </Flex>
       </Box>
     );
   }
@@ -402,6 +457,18 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
   return (
     <Stack spacing={10}>
       <Box borderBottomWidth="1px" borderColor="slate.700" pb={4}>
+        {showBackButton && (
+          <Button
+            variant="ghost"
+            leftIcon={<Icon as={FaArrowLeft} />}
+            color="gray.400"
+            mb={3}
+            _hover={{ color: 'gray.200', bg: 'slate.700' }}
+            onClick={() => navigate('/sistemas')}
+          >
+            Voltar para Sistemas
+          </Button>
+        )}
         <Heading size="lg" fontWeight="extrabold" color="gray.100">
           {sistema.nome}
         </Heading>
@@ -457,7 +524,7 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
             Geração Instantânea
           </Text>
           <Text fontSize="3xl" fontWeight="extrabold" mt={1}>
-            {leituraAtual.geracao_w} <Text as="span" fontSize="xl" fontWeight="medium" color="gray.400">W</Text>
+            {Math.round(leituraAtual.geracao_w)} <Text as="span" fontSize="xl" fontWeight="medium" color="gray.400">W</Text>
           </Text>
         </Box>
 
@@ -474,7 +541,7 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
             Consumo da Carga
           </Text>
           <Text fontSize="3xl" fontWeight="extrabold" mt={1}>
-            {leituraAtual.consumo_w} <Text as="span" fontSize="xl" fontWeight="medium" color="gray.400">W</Text>
+            {Math.round(leituraAtual.consumo_w)} <Text as="span" fontSize="xl" fontWeight="medium" color="gray.400">W</Text>
           </Text>
         </Box>
 
@@ -492,13 +559,13 @@ function ClienteDashboard({ sistemaId }: { sistemaId?: string }) {
                 Nível da Bateria (SOC)
               </Text>
               <Text fontSize="3xl" fontWeight="extrabold" mt={1}>
-                {leituraAtual.soc_bateria}%
+                {Math.round(leituraAtual.soc_bateria)}%
               </Text>
             </Box>
             <Box className="battery-shell">
               <Box
                 className="battery-level"
-                style={{ height: `${leituraAtual.soc_bateria}%` }}
+                style={{ height: `${Math.round(leituraAtual.soc_bateria)}%` }}
                 bg={batteryColor}
               />
             </Box>

@@ -13,9 +13,10 @@ import {
   Stack,
   Text,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FaFilter, FaArrowLeft } from 'react-icons/fa6';
+import { useAuth } from '../context/AuthContext';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -26,11 +27,12 @@ import {
   PointElement,
   Title,
   Tooltip,
+  BarElement,
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 import { getSistemaById, getSistemas } from '../api/sistemas';
-import { getLeituras, agruparLeiturasPorHora } from '../api/leituras';
-import type { Sistema, Leitura } from '../models/domain';
+import { getLeiturasAgregadas, type DadoAgregado } from '../api/leituras';
+import type { Sistema } from '../models/domain';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -38,111 +40,137 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
   Filler
 );
 
+// Formatar data para input date
+function formatDateForInput(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
 // Gerar dados simulados quando não há leituras reais
-const gerarDadosSimulados = (capacidadeWp: number) => {
+const gerarDadosSimulados = (capacidadeWp: number): DadoAgregado[] => {
   const horas = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00'];
   const maxGen = capacidadeWp * 0.85;
   
-  // Curva de geração solar (pico ao meio-dia)
-  const geracao = horas.map((_, i) => {
+  return horas.map((label, i) => {
     const hour = 6 + i * 2;
     const peakHour = 12;
     const spread = 3.5;
-    return Math.round(maxGen * Math.exp(-Math.pow(hour - peakHour, 2) / (2 * spread * spread)));
+    const geracao = Math.round(maxGen * Math.exp(-Math.pow(hour - peakHour, 2) / (2 * spread * spread)));
+    const consumo = Math.round(geracao * (0.3 + Math.random() * 0.4));
+    
+    return {
+      label,
+      // Potência (W)
+      geracao,
+      geracao_max: geracao,
+      consumo,
+      // Tensão (V)
+      geracao_tensao: 220 + Math.random() * 10 - 5,
+      consumo_tensao: 220 + Math.random() * 10 - 5,
+      // Corrente (A)
+      geracao_corrente: geracao > 0 ? geracao / 220 : 0,
+      consumo_corrente: consumo / 220,
+      // Energia (kWh)
+      geracao_energia: geracao * 0.25 / 1000,
+      consumo_energia: consumo * 0.25 / 1000,
+      // Bateria
+      bateria_soc: 50 + Math.random() * 40,
+      bateria_tensao: 48 + Math.random() * 4 - 2,
+      bateria_corrente: geracao > consumo ? Math.random() * 20 : -Math.random() * 15,
+      // Outros
+      temperatura: 30 + Math.random() * 15,
+      amostras: 1,
+    };
   });
-  
-  // Curva de consumo (mais variável)
-  const consumo = geracao.map(g => Math.round(g * (0.3 + Math.random() * 0.4)));
-  
-  return { horas, geracao, consumo };
 };
 
 export default function Analytics() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, isAdmin, isCliente } = useAuth();
   const sistemaIdParam = searchParams.get('sistema');
   
   const [sistemas, setSistemas] = useState<Sistema[]>([]);
   const [sistemaAtual, setSistemaAtual] = useState<Sistema | null>(null);
-  const [leituras, setLeituras] = useState<Leitura[]>([]);
+  const [dadosAgregados, setDadosAgregados] = useState<DadoAgregado[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingLeituras, setLoadingLeituras] = useState(false);
+  const [temDadosReais, setTemDadosReais] = useState(false);
   
-  const [dataInicial, setDataInicial] = useState('');
-  const [periodo, setPeriodo] = useState('diario');
+  // Data inicial padrão: hoje
+  const [dataInicial, setDataInicial] = useState(() => formatDateForInput(new Date()));
+  const [periodo, setPeriodo] = useState<'diario' | 'semanal' | 'mensal' | 'anual'>('diario');
   const [variavel, setVariavel] = useState('potencia');
   const [tipoGrafico, setTipoGrafico] = useState('linha');
+  const [subsistemaSelecionado, setSubsistemaSelecionado] = useState<number | 'todos'>('todos');
 
-  // Carregar lista de sistemas
+  // Carregar lista de sistemas (filtrada por cliente se não for admin)
   useEffect(() => {
     (async () => {
       try {
         const data = await getSistemas();
-        setSistemas(data);
+        
+        // Se for cliente, filtrar apenas o sistema relacionado
+        if (isCliente && user?.sistema_id) {
+          const sistemasFiltrados = data.filter(s => s._id === user.sistema_id);
+          setSistemas(sistemasFiltrados);
+        } else {
+          // Admin vê todos os sistemas
+          setSistemas(data);
+        }
       } catch (err) {
         console.error('Erro ao carregar sistemas:', err);
       }
     })();
-  }, []);
+  }, [isCliente, user?.sistema_id]);
 
   // Carregar sistema selecionado
   useEffect(() => {
     let active = true;
+    
     (async () => {
+      // Aguardar sistemas carregarem
+      if (sistemas.length === 0) {
+        return;
+      }
+      
       setLoading(true);
       try {
         if (sistemaIdParam) {
-          const sistema = await getSistemaById(sistemaIdParam);
-          if (active) {
-            setSistemaAtual(sistema);
+          // Verificar se o ID existe na lista de sistemas carregados
+          const sistemaLocal = sistemas.find(s => s._id === sistemaIdParam);
+          if (sistemaLocal) {
+            if (active) {
+              setSistemaAtual(sistemaLocal);
+            }
+          } else {
+            // ID não existe, usar o primeiro sistema e limpar URL
+            if (active) {
+              setSistemaAtual(sistemas[0]);
+              setSearchParams({});
+            }
           }
-        } else if (sistemas.length > 0 && !sistemaAtual) {
-          // Se não há sistema na URL, usar o primeiro da lista
+        } else {
+          // Nenhum ID na URL, usar primeiro sistema
           setSistemaAtual(sistemas[0]);
         }
       } catch (err) {
         console.error('Erro ao carregar sistema:', err);
+        if (sistemas.length > 0 && active) {
+          setSistemaAtual(sistemas[0]);
+        }
       } finally {
         if (active) setLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [sistemaIdParam, sistemas]);
-
-  // Carregar leituras do sistema
-  useEffect(() => {
-    let active = true;
-    if (!sistemaAtual) return;
-    
-    (async () => {
-      setLoadingLeituras(true);
-      try {
-        // Buscar leituras de todos os subsistemas do sistema
-        const subsistemaIds = sistemaAtual.subsistema?.map(s => s._id) || [];
-        const todasLeituras: Leitura[] = [];
-        
-        for (const subId of subsistemaIds) {
-          const leit = await getLeituras(subId);
-          todasLeituras.push(...leit);
-        }
-        
-        if (active) {
-          setLeituras(todasLeituras);
-        }
-      } catch (err) {
-        console.error('Erro ao carregar leituras:', err);
-      } finally {
-        if (active) setLoadingLeituras(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [sistemaAtual]);
+  }, [sistemaIdParam, sistemas, setSearchParams]);
 
   // Calcular capacidade do sistema
   const capacidadeWp = useMemo(() => {
@@ -156,67 +184,267 @@ export default function Analytics() {
     return total || 1000;
   }, [sistemaAtual]);
 
-  // Processar dados para o gráfico
-  const dados = useMemo(() => {
-    if (leituras.length > 0) {
-      const agrupados = agruparLeiturasPorHora(leituras);
-      return {
-        horas: agrupados.map(a => a.hora),
-        geracao: agrupados.map(a => a.geracao),
-        consumo: agrupados.map(a => a.consumo),
-      };
+  // Função para carregar dados do banco
+  const carregarDados = useCallback(async () => {
+    if (!sistemaAtual?._id) return;
+    
+    setLoadingLeituras(true);
+    try {
+      // Calcular data fim baseada no período
+      let dataFim: string | undefined;
+      const inicio = new Date(dataInicial);
+      
+      switch (periodo) {
+        case 'semanal':
+          const fimSemana = new Date(inicio);
+          fimSemana.setDate(fimSemana.getDate() + 6);
+          dataFim = formatDateForInput(fimSemana);
+          break;
+        case 'mensal':
+          const fimMes = new Date(inicio);
+          fimMes.setMonth(fimMes.getMonth() + 1);
+          fimMes.setDate(fimMes.getDate() - 1);
+          dataFim = formatDateForInput(fimMes);
+          break;
+        case 'anual':
+          const fimAno = new Date(inicio);
+          fimAno.setFullYear(fimAno.getFullYear() + 1);
+          fimAno.setDate(fimAno.getDate() - 1);
+          dataFim = formatDateForInput(fimAno);
+          break;
+        default: // diario
+          dataFim = dataInicial;
+      }
+      
+      const resultado = await getLeiturasAgregadas(
+        sistemaAtual._id,
+        dataInicial,
+        dataFim,
+        periodo,
+        subsistemaSelecionado === 'todos' ? undefined : subsistemaSelecionado
+      );
+      
+      if (resultado.dados.length > 0) {
+        setDadosAgregados(resultado.dados);
+        setTemDadosReais(true);
+      } else {
+        setDadosAgregados(gerarDadosSimulados(capacidadeWp));
+        setTemDadosReais(false);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar leituras:', err);
+      setDadosAgregados(gerarDadosSimulados(capacidadeWp));
+      setTemDadosReais(false);
+    } finally {
+      setLoadingLeituras(false);
     }
-    // Se não há leituras, gerar dados simulados
-    return gerarDadosSimulados(capacidadeWp);
-  }, [leituras, capacidadeWp]);
+  }, [sistemaAtual, dataInicial, periodo, capacidadeWp, subsistemaSelecionado]);
+
+  // Carregar dados quando muda sistema ou ao montar
+  useEffect(() => {
+    if (sistemaAtual) {
+      carregarDados();
+    }
+  }, [sistemaAtual, carregarDados]);
 
   // Handler para trocar de sistema
   const handleSistemaChange = (id: string) => {
+    setSubsistemaSelecionado('todos'); // Reset subsistema ao trocar sistema
     setSearchParams({ sistema: id });
   };
 
-  // Calcular max Y para o gráfico
-  const maxY = useMemo(() => {
-    const maxVal = Math.max(...dados.geracao, ...dados.consumo);
-    return Math.ceil(maxVal / 100) * 100 + 100;
-  }, [dados]);
-
-  const chartData = {
-    labels: dados.horas,
-    datasets: [
-      {
-        label: 'Geração Fotovoltaica (W)',
-        data: dados.geracao,
-        borderColor: 'rgba(45, 212, 191, 1)',
-        backgroundColor: 'rgba(45, 212, 191, 0.15)',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4,
-        pointRadius: 4,
-        pointBackgroundColor: 'rgba(45, 212, 191, 1)',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointHoverRadius: 6,
-      },
-      {
-        label: 'Consumo Médio (W)',
-        data: dados.consumo,
-        borderColor: 'rgba(234, 179, 8, 1)',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: [5, 5],
-        fill: false,
-        tension: 0.4,
-        pointRadius: 4,
-        pointBackgroundColor: 'rgba(234, 179, 8, 1)',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointHoverRadius: 6,
-      },
-    ],
+  // Handler para aplicar filtros
+  const handleAplicarFiltros = () => {
+    carregarDados();
   };
 
-  const chartOptions = {
+  // Configuração do gráfico baseada na variável selecionada
+  const chartConfig = useMemo(() => {
+    switch (variavel) {
+      case 'potencia':
+        return {
+          datasets: [
+            {
+              label: 'Geração (W)',
+              dataKey: 'geracao' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+            {
+              label: 'Consumo (W)',
+              dataKey: 'consumo' as const,
+              color: 'rgba(234, 179, 8, 1)',
+              bgColor: 'rgba(234, 179, 8, 0.15)',
+              dashed: true,
+            },
+          ],
+          yAxisLabel: 'Potência (W)',
+          stepSize: 100,
+        };
+      case 'energia':
+        return {
+          datasets: [
+            {
+              label: 'Geração (kWh)',
+              dataKey: 'geracao_energia' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+            {
+              label: 'Consumo (kWh)',
+              dataKey: 'consumo_energia' as const,
+              color: 'rgba(234, 179, 8, 1)',
+              bgColor: 'rgba(234, 179, 8, 0.15)',
+              dashed: true,
+            },
+          ],
+          yAxisLabel: 'Energia (kWh)',
+          stepSize: 0.5,
+        };
+      case 'tensao':
+        return {
+          datasets: [
+            {
+              label: 'Tensão Geração (V)',
+              dataKey: 'geracao_tensao' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+            {
+              label: 'Tensão Consumo (V)',
+              dataKey: 'consumo_tensao' as const,
+              color: 'rgba(234, 179, 8, 1)',
+              bgColor: 'rgba(234, 179, 8, 0.15)',
+              dashed: true,
+            },
+            {
+              label: 'Tensão Bateria (V)',
+              dataKey: 'bateria_tensao' as const,
+              color: 'rgba(168, 85, 247, 1)',
+              bgColor: 'rgba(168, 85, 247, 0.15)',
+            },
+          ],
+          yAxisLabel: 'Tensão (V)',
+          stepSize: 10,
+        };
+      case 'corrente':
+        return {
+          datasets: [
+            {
+              label: 'Corrente Geração (A)',
+              dataKey: 'geracao_corrente' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+            {
+              label: 'Corrente Consumo (A)',
+              dataKey: 'consumo_corrente' as const,
+              color: 'rgba(234, 179, 8, 1)',
+              bgColor: 'rgba(234, 179, 8, 0.15)',
+              dashed: true,
+            },
+            {
+              label: 'Corrente Bateria (A)',
+              dataKey: 'bateria_corrente' as const,
+              color: 'rgba(168, 85, 247, 1)',
+              bgColor: 'rgba(168, 85, 247, 0.15)',
+            },
+          ],
+          yAxisLabel: 'Corrente (A)',
+          stepSize: 5,
+        };
+      case 'geracao_consumo':
+        return {
+          datasets: [
+            {
+              label: 'Geração Fotovoltaica (W)',
+              dataKey: 'geracao' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+            {
+              label: 'Consumo Médio (W)',
+              dataKey: 'consumo' as const,
+              color: 'rgba(234, 179, 8, 1)',
+              bgColor: 'rgba(234, 179, 8, 0.15)',
+              dashed: true,
+            },
+          ],
+          yAxisLabel: 'Potência (W)',
+          stepSize: 100,
+        };
+      case 'bateria':
+        return {
+          datasets: [
+            {
+              label: 'Estado de Carga (%)',
+              dataKey: 'bateria_soc' as const,
+              color: 'rgba(34, 197, 94, 1)',
+              bgColor: 'rgba(34, 197, 94, 0.15)',
+            },
+          ],
+          yAxisLabel: 'SOC (%)',
+          stepSize: 10,
+        };
+      case 'temperatura':
+        return {
+          datasets: [
+            {
+              label: 'Temperatura (°C)',
+              dataKey: 'temperatura' as const,
+              color: 'rgba(239, 68, 68, 1)',
+              bgColor: 'rgba(239, 68, 68, 0.15)',
+            },
+          ],
+          yAxisLabel: 'Temperatura (°C)',
+          stepSize: 5,
+        };
+      default:
+        return {
+          datasets: [
+            {
+              label: 'Geração (W)',
+              dataKey: 'geracao' as const,
+              color: 'rgba(45, 212, 191, 1)',
+              bgColor: 'rgba(45, 212, 191, 0.15)',
+            },
+          ],
+          yAxisLabel: 'Potência (W)',
+          stepSize: 100,
+        };
+    }
+  }, [variavel]);
+
+  // Calcular max Y para o gráfico
+  const maxY = useMemo(() => {
+    const allValues = dadosAgregados.flatMap(d => 
+      chartConfig.datasets.map(ds => (d as any)[ds.dataKey] || 0)
+    );
+    const maxVal = Math.max(...allValues, 10);
+    const step = chartConfig.stepSize;
+    return Math.ceil(maxVal / step) * step + step;
+  }, [dadosAgregados, chartConfig]);
+
+  const chartData = useMemo(() => ({
+    labels: dadosAgregados.map(d => d.label),
+    datasets: chartConfig.datasets.map((ds, index) => ({
+      label: ds.label,
+      data: dadosAgregados.map(d => (d as any)[ds.dataKey] || 0),
+      borderColor: ds.color,
+      backgroundColor: tipoGrafico === 'barra' ? ds.color.replace('1)', '0.7)') : ds.bgColor,
+      borderWidth: 2,
+      borderDash: ds.dashed && tipoGrafico !== 'barra' ? [5, 5] : [],
+      fill: tipoGrafico !== 'barra' && index === 0,
+      tension: 0.4,
+      pointRadius: 4,
+      pointBackgroundColor: ds.color,
+      pointBorderColor: '#fff',
+      pointBorderWidth: 2,
+      pointHoverRadius: 6,
+    })),
+  }), [dadosAgregados, chartConfig, tipoGrafico]);
+
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -258,6 +486,12 @@ export default function Analytics() {
         },
       },
       y: {
+        title: {
+          display: true,
+          text: chartConfig.yAxisLabel,
+          color: '#94a3b8',
+          font: { size: 12 },
+        },
         grid: {
           color: 'rgba(51, 65, 85, 0.3)',
           drawBorder: false,
@@ -265,13 +499,13 @@ export default function Analytics() {
         ticks: {
           color: '#64748b',
           font: { size: 11 },
-          stepSize: 100,
+          stepSize: chartConfig.stepSize,
         },
         beginAtZero: true,
         max: maxY,
       },
     },
-  };
+  }), [chartConfig, maxY]);
 
   const inputStyles = {
     bg: 'slate.700',
@@ -326,7 +560,7 @@ export default function Analytics() {
           wrap="wrap"
         >
           {/* Seletor de Sistema */}
-          <FormControl flex="1" minW="200px">
+          <FormControl flex="1" minW="180px">
             <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
               Sistema
             </FormLabel>
@@ -338,6 +572,28 @@ export default function Analytics() {
               {sistemas.map((s) => (
                 <option key={s._id} value={s._id}>
                   {s.nome}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Seletor de Subsistema */}
+          <FormControl flex="1" minW="160px">
+            <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
+              Subsistema
+            </FormLabel>
+            <Select 
+              value={subsistemaSelecionado === 'todos' ? 'todos' : subsistemaSelecionado.toString()} 
+              onChange={(e) => {
+                const val = e.target.value;
+                setSubsistemaSelecionado(val === 'todos' ? 'todos' : parseInt(val, 10));
+              }} 
+              {...inputStyles}
+            >
+              <option value="todos">Todos</option>
+              {(sistemaAtual?.subsistema || []).map((sub, idx) => (
+                <option key={sub._id || idx} value={idx}>
+                  {sub.tipo_sistema || `Subsistema ${idx + 1}`}
                 </option>
               ))}
             </Select>
@@ -360,7 +616,11 @@ export default function Analytics() {
             <FormLabel fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wider">
               Período
             </FormLabel>
-            <Select value={periodo} onChange={(e) => setPeriodo(e.target.value)} {...inputStyles}>
+            <Select 
+              value={periodo} 
+              onChange={(e) => setPeriodo(e.target.value as 'diario' | 'semanal' | 'mensal' | 'anual')} 
+              {...inputStyles}
+            >
               <option value="diario">Diário</option>
               <option value="semanal">Semanal</option>
               <option value="mensal">Mensal</option>
@@ -377,6 +637,9 @@ export default function Analytics() {
               <option value="energia">Energia (kWh)</option>
               <option value="tensao">Tensão (V)</option>
               <option value="corrente">Corrente (A)</option>
+              <option value="geracao_consumo">Geração vs Consumo (W)</option>
+              <option value="bateria">Bateria (SOC %)</option>
+              <option value="temperatura">Temperatura (°C)</option>
             </Select>
           </FormControl>
 
@@ -401,6 +664,8 @@ export default function Analytics() {
             h="42px"
             fontWeight="bold"
             boxShadow="lg"
+            onClick={handleAplicarFiltros}
+            isLoading={loadingLeituras}
           >
             Aplicar Filtros
           </Button>
@@ -433,11 +698,20 @@ export default function Analytics() {
           </Flex>
         )}
         <Box h="450px">
-          <Line data={chartData} options={chartOptions} />
+          {tipoGrafico === 'barra' ? (
+            <Bar data={chartData} options={chartOptions} />
+          ) : (
+            <Line data={chartData} options={chartOptions} />
+          )}
         </Box>
-        {leituras.length === 0 && !loadingLeituras && (
+        {!temDadosReais && !loadingLeituras && (
           <Text color="gray.500" fontSize="sm" textAlign="center" mt={2}>
-            * Dados simulados - nenhuma leitura real disponível para este sistema
+            * Dados simulados - nenhuma leitura real disponível para esta data/sistema
+          </Text>
+        )}
+        {temDadosReais && !loadingLeituras && (
+          <Text color="teal.400" fontSize="sm" textAlign="center" mt={2}>
+            ✓ Exibindo {dadosAgregados.reduce((sum, d) => sum + d.amostras, 0).toLocaleString()} amostras do banco de dados
           </Text>
         )}
       </Box>
