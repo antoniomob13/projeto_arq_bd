@@ -349,6 +349,8 @@ async function seed() {
       senha: 'admin123',
       tipo: 'admin',
       telefone: '(93) 99999-0000',
+      cpf_cnpj: '000.000.000-01',
+      tipo_pessoa: 'fisica',
       endereco: { rua: 'Rua Vera Paz, Campus Tapajós', bairro: 'Salé', cidade: 'Santarém', estado: 'PA', cep: '68040-000' },
       ativo: true,
     });
@@ -358,6 +360,8 @@ async function seed() {
       senha: 'admin123',
       tipo: 'admin',
       telefone: '(93) 99888-1111',
+      cpf_cnpj: '000.000.000-02',
+      tipo_pessoa: 'fisica',
       endereco: { rua: 'Av. Marechal Rondon, 50', bairro: 'Caranazal', cidade: 'Santarém', estado: 'PA', cep: '68040-070' },
       ativo: true,
     });
@@ -367,6 +371,8 @@ async function seed() {
       senha: 'admin123',
       tipo: 'admin',
       telefone: '(93) 99777-2222',
+      cpf_cnpj: '000.000.000-03',
+      tipo_pessoa: 'fisica',
       endereco: { rua: 'Campus Tapajós, Bloco B', bairro: 'Salé', cidade: 'Santarém', estado: 'PA', cep: '68040-000' },
       ativo: true,
     });
